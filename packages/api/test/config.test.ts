@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { loadConfig } from '../src/config.ts';
 
@@ -41,5 +42,11 @@ describe('Configuration', () => {
       port: 3000,
       clientDir: '/client',
     });
+  });
+
+  test('resolves a relative client directory against the working directory', () => {
+    expect(loadConfig({ ...env, OBJECTLE_CLIENT_DIR: 'packages/client/dist' }).clientDir).toBe(
+      resolve('packages/client/dist'),
+    );
   });
 });

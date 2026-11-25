@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 export interface Config {
   signingKey: string;
   launchDate: string;
@@ -28,7 +30,7 @@ export function loadConfig(env: Env): Config {
     signingKey,
     launchDate,
     contentDir: required(env, 'OBJECTLE_CONTENT_DIR'),
-    clientDir: env.OBJECTLE_CLIENT_DIR || undefined,
+    clientDir: env.OBJECTLE_CLIENT_DIR ? resolve(env.OBJECTLE_CLIENT_DIR) : undefined,
     port: Number(env.PORT ?? 8080),
   };
 }
