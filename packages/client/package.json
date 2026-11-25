@@ -1,0 +1,16 @@
+{
+  "name": "@objectle/client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@objectle/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@objectle/api": "workspace:*",
+    "vite": "^8.3.8"
+  }
+}

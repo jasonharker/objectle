@@ -1,0 +1,11 @@
+{
+  "name": "@objectle/api",
+  "private": true,
+  "type": "module",
+  "exports": "./src/app.ts",
+  "dependencies": {
+    "@fastify/static": "^10.1.12",
+    "@objectle/shared": "workspace:*",
+    "fastify": "^5.12.8"
+  }
+}
