@@ -116,7 +116,7 @@ varying vec2 vUv;
 // right, and an ambient term that keeps shadowed sides off black.
 const vec3 keyLight = vec3(-0.45, 0.6, 0.66);
 const vec3 fillLight = vec3(0.8, -0.1, 0.59);
-const float ambient = 0.45;
+const float ambient = 0.4;
 
 // Soft toon shading: two softened steps give shadow, mid and lit bands.
 float toon(float lambert) {
@@ -132,7 +132,7 @@ void main() {
   vec3 quantized = sRGBTransferEOTF(texture(palette, srgb)).rgb;
 
   vec3 n = normalize(vViewNormal) * (gl_FrontFacing ? 1.0 : -1.0);
-  float light = ambient + 0.45 * toon(dot(n, keyLight)) + 0.15 * toon(dot(n, fillLight));
+  float light = ambient + 0.6 * toon(dot(n, keyLight)) + 0.2 * toon(dot(n, fillLight));
   gl_FragColor = vec4(quantized * light, 1.0);
   #include <colorspace_fragment>
 }
