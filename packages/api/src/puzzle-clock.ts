@@ -1,18 +1,29 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// en-CA formats dates as YYYY-MM-DD.
-const pacificDate = new Intl.DateTimeFormat('en-CA', {
+const pacificDate = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Los_Angeles',
   year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
+  month: 'numeric',
+  day: 'numeric',
 });
+
+/** Midnight UTC of the Pacific calendar date at `now`, as epoch milliseconds. */
+function pacificDay(now: Date): number {
+  const parts = pacificDate.formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)!.value);
+  return Date.UTC(part('year'), part('month') - 1, part('day'));
+}
+
+/** Midnight UTC of a YYYY-MM-DD date, as epoch milliseconds. */
+function calendarDay(date: string): number {
+  const [year, month, day] = date.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
 
 /**
  * The active Puzzle Number at `now`: 1 on the Launch Date (a YYYY-MM-DD
  * Pacific date), turning over at midnight Pacific whatever the DST offset.
  */
 export function puzzleNumberAt(now: Date, launchDate: string): number {
-  const today = Date.parse(pacificDate.format(now));
-  return Math.round((today - Date.parse(launchDate)) / DAY_MS) + 1;
+  return Math.round((pacificDay(now) - calendarDay(launchDate)) / DAY_MS) + 1;
 }
