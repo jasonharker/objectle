@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { extname } from 'node:path';
+import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import type { GameResponse } from '@objectle/shared';
 import type { Content } from './content.ts';
@@ -15,6 +16,9 @@ export interface Dependencies {
   launchDate: string;
   content: Content;
   signingKey: string;
+  /** The built client, served from the same origin; omitted in API-only tests. */
+  clientDir?: string;
+  logger?: boolean;
 }
 
 const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml' };
@@ -23,8 +27,9 @@ const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml' };
 // nor its payload carries the noun or the bundle's file name.
 const assetId = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
-export function buildApp({ clock, launchDate, content, signingKey }: Dependencies) {
-  const app = Fastify();
+export function buildApp({ clock, launchDate, content, signingKey, clientDir, logger = false }: Dependencies) {
+  const app = Fastify({ logger });
+  if (clientDir) app.register(fastifyStatic, { root: clientDir });
 
   /** Reveal Stage 1's assets of the active Daily Object, keyed by asset id. */
   function activeStageAssets(puzzleNumber: number) {

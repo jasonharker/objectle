@@ -12,14 +12,16 @@ export interface Options {
   now: string;
   launchDate?: string;
   signingKey?: string;
+  clientDir?: string;
 }
 
-export async function startApi({ now, launchDate = '2027-03-01', signingKey = testSigningKey }: Options) {
+export async function startApi({ now, launchDate = '2027-03-01', signingKey = testSigningKey, clientDir }: Options) {
   return buildApp({
     clock: () => new Date(now),
     launchDate,
     content: await loadContent(fixtureDir),
     signingKey,
+    clientDir,
   });
 }
 
