@@ -13,3 +13,4 @@ Most daily guessing games are pure static sites that ship the schedule and answe
 - The fixed midnight-Pacific rollover keeps the server to one active Puzzle Number at a time.
 - The schedule can be re-planned (Pins, reordering) at any time without a client release, as long as past Puzzle Numbers are never reassigned.
 - A player can restart in a private window; accepted at this scale.
+- A player can replay a Play Token from before they finished, finish again, and be counted twice in the Distribution; accepted, since preventing it needs per-game server state.

@@ -11,5 +11,6 @@ The 700-noun Guess Vocabulary is sourced from mixed libraries (CC0/CC-BY scans, 
 ## Consequences
 
 - Fine surface detail (wood grain, fabric weave) is partly lost, making Reveal Stage 1 harder; the palette depth is the tuning knob.
+- Quantization crushed near-black objects (binoculars, avocado) to pure black, so the palette has a black floor: its darkest level is lifted above black. The floor is the second tuning knob; texture inside very dark surfaces is still flattened.
 - The stage-authoring tool must render through the same shader so the curator sees exactly what players see.
 - Swapping to realism later means re-vetting the whole Guess Vocabulary.
