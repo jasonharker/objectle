@@ -35,7 +35,11 @@ async function indexAsset(dir: string, path: string): Promise<StageAsset> {
   };
 }
 
-/** Load a content bundle directory: bundle.json plus an index of every stage asset it names. */
+/**
+ * Load a content bundle directory: bundle.json plus an index of every stage
+ * asset it names. Throws, listing every problem, on a bundle the API could
+ * not serve; the curation build's checks are the full ones.
+ */
 export async function loadContent(dir: string): Promise<Content> {
   const bundle: ContentBundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
 
@@ -53,6 +57,23 @@ export async function loadContent(dir: string): Promise<Content> {
     }
     stagesByNoun.set(entry.noun, stages);
   }
+
+  const problems: string[] = [];
+  for (const entry of bundle.answerPool) {
+    if (entry.revealStages.length === 0) problems.push(`Answer Pool noun "${entry.noun}" has no Reveal Stages`);
+  }
+  for (const { puzzleNumber, noun } of bundle.schedule) {
+    if (!stagesByNoun.has(noun)) {
+      problems.push(`Puzzle Number ${puzzleNumber} is scheduled to "${noun}", which is not in the Answer Pool`);
+    }
+  }
+  const pathById = new Map<string, string>();
+  for (const [path, { id }] of assetsByPath) {
+    const other = pathById.get(id);
+    if (other !== undefined) problems.push(`stage assets ${other} and ${path} have the same asset id`);
+    pathById.set(id, path);
+  }
+  if (problems.length > 0) throw new Error(`invalid content bundle in ${dir}:\n${problems.join('\n')}`);
 
   const scheduled = new Map(bundle.schedule.map((entry) => [entry.puzzleNumber, entry.noun]));
   return {
