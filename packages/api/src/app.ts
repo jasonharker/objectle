@@ -3,6 +3,7 @@ import { extname } from 'node:path';
 import Fastify from 'fastify';
 import type { GameResponse } from '@objectle/shared';
 import type { Content } from './content.ts';
+import { signPlayToken } from './play-token.ts';
 import { puzzleNumberAt } from './puzzle-clock.ts';
 
 export { loadContent } from './content.ts';
@@ -22,7 +23,7 @@ const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml' };
 // nor its payload carries the noun or the bundle's file name.
 const assetId = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
-export function buildApp({ clock, launchDate, content }: Dependencies) {
+export function buildApp({ clock, launchDate, content, signingKey }: Dependencies) {
   const app = Fastify();
 
   /** Reveal Stage 1's assets of the active Daily Object, keyed by asset id. */
@@ -46,7 +47,7 @@ export function buildApp({ clock, launchDate, content }: Dependencies) {
     if (!assets) return reply.code(503).send({ error: 'No Daily Object is scheduled for today.' });
 
     const response: GameResponse = {
-      playToken: '',
+      playToken: signPlayToken({ puzzleNumber, guesses: [] }, signingKey),
       puzzleNumber,
       revealStage: 1,
       stageAssets: [...assets.keys()].map((id) => ({ url: `/api/stage-assets/${id}` })),
