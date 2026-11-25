@@ -1,0 +1,67 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { describe, expect, test } from 'vitest';
+import type { ContentBundle, GameResponse } from '@objectle/shared';
+import { fixtureDir, startGame } from './harness.ts';
+
+// Launch Date 2027-03-01, so these instants are Puzzle Numbers 1, 2 and 3.
+const days = ['2027-03-01T20:00:00Z', '2027-03-02T20:00:00Z', '2027-03-03T20:00:00Z'];
+
+async function fixtureBundle(): Promise<ContentBundle> {
+  return JSON.parse(await readFile(join(fixtureDir, 'bundle.json'), 'utf8'));
+}
+
+describe('A new game', () => {
+  test('starts at Reveal Stage 1 with the Daily Object’s stage-1 asset', async () => {
+    const { api, response } = await startGame({ now: days[0] });
+    const game = response.json<GameResponse>();
+    expect(game.revealStage).toBe(1);
+    expect(game.stageAssets).toHaveLength(1);
+
+    const asset = await api.inject({ method: 'GET', url: game.stageAssets[0].url });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers['content-type']).toBe('image/svg+xml');
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+  });
+
+  test('gets the next day’s Daily Object after rollover', async () => {
+    const { api, response } = await startGame({ now: days[1] });
+    const asset = await api.inject({ method: 'GET', url: response.json<GameResponse>().stageAssets[0].url });
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/pinecone-stage-1.svg')));
+  });
+
+  test('cannot fetch a stage asset that is not the active Daily Object’s', async () => {
+    const tomorrow = (await startGame({ now: days[1] })).response.json<GameResponse>();
+    const { api } = await startGame({ now: days[0] });
+    const asset = await api.inject({ method: 'GET', url: tomorrow.stageAssets[0].url });
+    expect(asset.statusCode).toBe(404);
+  });
+
+  test.each(days)('never discloses the Daily Object, its Attributes or the Schedule (%s)', async (now) => {
+    const bundle = await fixtureBundle();
+    const { api, response } = await startGame({ now });
+    const game = response.json<GameResponse>();
+    const assetBodies = await Promise.all(
+      game.stageAssets.map(async ({ url }) => (await api.inject({ method: 'GET', url })).body),
+    );
+    const disclosed = [response.body, ...assetBodies].join('\n').toLowerCase();
+
+    const scheduled = bundle.guessVocabulary.filter((noun) =>
+      bundle.schedule.some((entry) => entry.noun === noun.name),
+    );
+    const secrets = scheduled.flatMap((noun) => [
+      noun.name,
+      noun.category,
+      noun.primaryMaterial,
+      noun.naturalOrMade,
+      String(noun.size),
+      noun.model,
+      noun.credit.author,
+    ]);
+    const assetPaths = bundle.answerPool.flatMap((entry) => entry.revealStages.flatMap((stage) => stage.assets));
+    for (const secret of [...secrets, ...assetPaths]) {
+      expect(disclosed).not.toContain(secret.toLowerCase());
+    }
+    expect(disclosed).not.toContain('schedule');
+  });
+});
