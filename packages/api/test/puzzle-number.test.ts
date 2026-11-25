@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { puzzleNumberAt } from './harness.ts';
+import { puzzleNumberAt, startGame } from './harness.ts';
 
 describe('Puzzle Number', () => {
   test('is 1 on the Launch Date', async () => {
@@ -32,5 +32,18 @@ describe('Puzzle Number', () => {
     expect(await puzzleNumberAt('2027-11-07T07:00:00Z', '2027-11-06')).toBe(2);
     expect(await puzzleNumberAt('2027-11-08T07:59:59Z', '2027-11-06')).toBe(2);
     expect(await puzzleNumberAt('2027-11-08T08:00:00Z', '2027-11-06')).toBe(3);
+  });
+});
+
+describe('Starting a game', () => {
+  test('before the Launch Date there is no active Puzzle Number', async () => {
+    const { response } = await startGame({ now: '2027-03-01T07:59:59Z', launchDate: '2027-03-01' });
+    expect(response.statusCode).toBe(404);
+  });
+
+  test('fails when the Schedule has no Daily Object for the active Puzzle Number', async () => {
+    // The fixture Schedule covers Puzzle Numbers 1-3.
+    const { response } = await startGame({ now: '2027-03-04T20:00:00Z', launchDate: '2027-03-01' });
+    expect(response.statusCode).toBe(503);
   });
 });

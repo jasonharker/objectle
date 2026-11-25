@@ -14,11 +14,18 @@ export interface Dependencies {
   signingKey: string;
 }
 
-export function buildApp({ clock, launchDate }: Dependencies) {
+export function buildApp({ clock, launchDate, content }: Dependencies) {
   const app = Fastify();
 
-  app.post('/api/game', async (): Promise<GameResponse> => {
-    return { playToken: '', puzzleNumber: puzzleNumberAt(clock(), launchDate), revealStage: 1, stageAssets: [] };
+  app.post('/api/game', async (_request, reply) => {
+    const puzzleNumber = puzzleNumberAt(clock(), launchDate);
+    if (puzzleNumber < 1) return reply.code(404).send({ error: 'Objectle has not launched yet.' });
+
+    const scheduled = content.bundle.schedule.find((entry) => entry.puzzleNumber === puzzleNumber);
+    if (!scheduled) return reply.code(503).send({ error: 'No Daily Object is scheduled for today.' });
+
+    const response: GameResponse = { playToken: '', puzzleNumber, revealStage: 1, stageAssets: [] };
+    return response;
   });
 
   return app;
