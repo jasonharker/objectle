@@ -11,8 +11,8 @@ export const fixtureDir = fileURLToPath(new URL('./fixture/', import.meta.url));
 export const testSigningKey = 'test-signing-key-test-signing-key';
 
 export interface Options {
-  /** The injected clock's current instant, as an ISO timestamp. */
-  now: string;
+  /** The injected clock's current instant, as an ISO timestamp, or a function returning it on each call. */
+  now: string | (() => string);
   launchDate?: string;
   signingKey?: string;
   clientDir?: string;
@@ -35,7 +35,7 @@ export async function startApi({
   contentDir = fixtureDir,
 }: Options) {
   return buildApp({
-    clock: () => new Date(now),
+    clock: () => new Date(typeof now === 'function' ? now() : now),
     launchDate,
     content: await loadContent(contentDir),
     signingKey,

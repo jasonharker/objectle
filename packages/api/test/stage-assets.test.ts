@@ -40,9 +40,33 @@ describe('A new game', () => {
     expect(asset.body).toBe(edited);
   });
 
-  test('cannot fetch a stage asset that is not the active Daily Object’s', async () => {
+  test('keeps serving a game’s stage assets across midnight Pacific rollover', async () => {
+    // 2027-03-02T08:00Z is midnight Pacific (PST) between Puzzle Numbers 1 and 2.
+    let now = '2027-03-02T07:59:59Z';
+    const { api, response } = await startGame({ now: () => now });
+    const game = response.json<GameResponse>();
+    expect(game.puzzleNumber).toBe(1);
+
+    now = '2027-03-02T08:00:01Z';
+    const asset = await api.inject({ method: 'GET', url: game.stageAssets[0].url });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+  });
+
+  test('stops serving a game’s stage assets once the following Puzzle Number has ended', async () => {
+    let now = days[1];
+    const { api, response } = await startGame({ now: () => now });
+    const { url } = response.json<GameResponse>().stageAssets[0];
+
+    now = '2027-03-04T07:59:59Z'; // still Puzzle Number 3
+    expect((await api.inject({ method: 'GET', url })).statusCode).toBe(200);
+    now = '2027-03-04T08:00:00Z'; // Puzzle Number 4
+    expect((await api.inject({ method: 'GET', url })).statusCode).toBe(404);
+  });
+
+  test('cannot fetch the next Daily Object’s stage asset, even a second before midnight', async () => {
     const tomorrow = (await startGame({ now: days[1] })).response.json<GameResponse>();
-    const { api } = await startGame({ now: days[0] });
+    const { api } = await startGame({ now: '2027-03-02T07:59:59Z' });
     const asset = await api.inject({ method: 'GET', url: tomorrow.stageAssets[0].url });
     expect(asset.statusCode).toBe(404);
   });

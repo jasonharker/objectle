@@ -43,8 +43,14 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
     return response;
   });
 
+  // A game started just before midnight Pacific keeps its asset URLs after
+  // rollover, so the previous Puzzle Number's assets are served too. A later
+  // Puzzle Number's never are.
   app.get<{ Params: { id: string } }>('/api/stage-assets/:id', async (request, reply) => {
-    const asset = stageOneAssets(puzzleNumberAt(clock(), launchDate))?.find(({ id }) => id === request.params.id);
+    const active = puzzleNumberAt(clock(), launchDate);
+    const asset = [active, active - 1]
+      .flatMap((puzzleNumber) => stageOneAssets(puzzleNumber) ?? [])
+      .find(({ id }) => id === request.params.id);
     if (!asset) return reply.code(404).send({ error: 'No such stage asset.' });
     return reply.type(asset.mediaType).send(await readFile(asset.file));
   });
