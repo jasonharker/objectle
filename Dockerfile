@@ -18,8 +18,10 @@ COPY --from=build /app/packages/api/package.json packages/api/
 COPY --from=build /app/packages/api/node_modules packages/api/node_modules
 COPY --from=build /app/packages/api/src packages/api/src
 COPY --from=build /app/packages/client/dist packages/client/dist
+# Served until the curation build ships the real bundle; see content/placeholder/README.md.
+COPY --from=build /app/content/placeholder content/placeholder
 # OBJECTLE_SIGNING_KEY (a secret), OBJECTLE_LAUNCH_DATE and OBJECTLE_CONTENT_DIR
-# (the mounted content bundle) come from the deployment.
+# (the content bundle) come from the deployment.
 ENV OBJECTLE_CLIENT_DIR=/app/packages/client/dist PORT=8080
 # Numeric, so a pod's runAsNonRoot can verify it.
 USER 65532:65532
