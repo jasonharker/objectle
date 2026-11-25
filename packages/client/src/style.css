@@ -31,7 +31,8 @@ figure {
   margin: 0;
 }
 
-figure img {
+figure img,
+figure canvas {
   display: block;
   width: 100%;
   aspect-ratio: 1;
