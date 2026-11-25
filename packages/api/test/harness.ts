@@ -1,5 +1,8 @@
 // Seam 1: the scoring API in-process, with an injected clock, the hand-written
 // content fixture and a test signing key. Tests talk to it only over HTTP.
+import { cp, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp, loadContent } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
@@ -13,13 +16,28 @@ export interface Options {
   launchDate?: string;
   signingKey?: string;
   clientDir?: string;
+  /** A content bundle directory other than the fixture. */
+  contentDir?: string;
 }
 
-export async function startApi({ now, launchDate = '2027-03-01', signingKey = testSigningKey, clientDir }: Options) {
+/** A writable copy of the fixture content bundle. */
+export async function copyFixture(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'objectle-content-'));
+  await cp(fixtureDir, dir, { recursive: true });
+  return dir;
+}
+
+export async function startApi({
+  now,
+  launchDate = '2027-03-01',
+  signingKey = testSigningKey,
+  clientDir,
+  contentDir = fixtureDir,
+}: Options) {
   return buildApp({
     clock: () => new Date(now),
     launchDate,
-    content: await loadContent(fixtureDir),
+    content: await loadContent(contentDir),
     signingKey,
     clientDir,
   });

@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { ContentBundle, GameResponse } from '@objectle/shared';
-import { fixtureDir, startGame } from './harness.ts';
+import { copyFixture, fixtureDir, startGame } from './harness.ts';
 
 // Launch Date 2027-03-01, so these instants are Puzzle Numbers 1, 2 and 3.
 const days = ['2027-03-01T20:00:00Z', '2027-03-02T20:00:00Z', '2027-03-03T20:00:00Z'];
@@ -28,6 +28,16 @@ describe('A new game', () => {
     const { api, response } = await startGame({ now: days[1] });
     const asset = await api.inject({ method: 'GET', url: response.json<GameResponse>().stageAssets[0].url });
     expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/pinecone-stage-1.svg')));
+  });
+
+  test('reads a stage asset’s bytes from the bundle when it is requested, not at startup', async () => {
+    const contentDir = await copyFixture();
+    const { api, response } = await startGame({ now: days[0], contentDir });
+    const edited = '<svg xmlns="http://www.w3.org/2000/svg"><!-- edited after startup --></svg>';
+    await writeFile(join(contentDir, 'assets/teapot-stage-1.svg'), edited);
+
+    const asset = await api.inject({ method: 'GET', url: response.json<GameResponse>().stageAssets[0].url });
+    expect(asset.body).toBe(edited);
   });
 
   test('cannot fetch a stage asset that is not the active Daily Object’s', async () => {
