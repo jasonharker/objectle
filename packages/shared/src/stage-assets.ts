@@ -1,9 +1,9 @@
-// The format a Reveal Stage asset must have before the API serves it
-// (ADR-0006): stages 1-5 are 1024×1024 lossless WebP images with no metadata,
-// stage 6 is a self-contained binary glTF with no names, extras or generator.
-// Neither format then carries anything beyond the pixels or the geometry, so
-// no payload can name the noun. Whether the pixels disclose too much (a stage-1
-// crop framing background) is the curation build's check, not this one.
+// The format a Reveal Stage asset must have (ADR-0006), checked by the
+// curation build and again by the scoring API before it serves a bundle:
+// stages 1-5 are 1024×1024 lossless WebP images with no metadata, stage 6 is
+// a self-contained binary glTF with no names, extras or generator. Neither
+// format then carries anything beyond the pixels or the geometry, so no
+// payload can name the noun. Node-only: it reads Buffers.
 
 /** Every Reveal Stage image is this many pixels square, so its size says nothing about the object. */
 export const stageImageSize = 1024;

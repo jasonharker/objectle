@@ -1,0 +1,9 @@
+{
+  "name": "@objectle/curation",
+  "private": true,
+  "type": "module",
+  "exports": "./src/build.ts",
+  "dependencies": {
+    "@objectle/shared": "workspace:*"
+  }
+}

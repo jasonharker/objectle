@@ -210,6 +210,9 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
+      '@objectle/curation':
+        specifier: workspace:*
+        version: link:../curation
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
@@ -232,6 +235,12 @@ importers:
       vite:
         specifier: ^8.3.8
         version: 8.3.8(@types/node@26.6.6)
+
+  packages/curation:
+    dependencies:
+      '@objectle/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/shared:
     devDependencies:

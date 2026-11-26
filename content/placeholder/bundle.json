@@ -3,7 +3,7 @@
     {
       "name": "teapot",
       "model": "models/teapot.glb",
-      "category": "kitchenware",
+      "category": "Cooking & Dining",
       "size": 0.24,
       "naturalOrMade": "made",
       "primaryMaterial": "ceramic",
@@ -17,7 +17,7 @@
     {
       "name": "pinecone",
       "model": "models/pinecone.glb",
-      "category": "plant",
+      "category": "Nature",
       "size": 0.09,
       "naturalOrMade": "natural",
       "primaryMaterial": "wood",
@@ -31,7 +31,7 @@
     {
       "name": "wooden spoon",
       "model": "models/wooden-spoon.glb",
-      "category": "kitchenware",
+      "category": "Cooking & Dining",
       "size": 0.3,
       "naturalOrMade": "made",
       "primaryMaterial": "wood",
@@ -45,7 +45,7 @@
     {
       "name": "claw hammer",
       "model": "models/claw-hammer.glb",
-      "category": "tool",
+      "category": "Tools & Repair",
       "size": 0.33,
       "naturalOrMade": "made",
       "primaryMaterial": "wood",
