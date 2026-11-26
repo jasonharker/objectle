@@ -85,24 +85,24 @@
     {
       "noun": "teapot",
       "revealStages": [
-        { "assets": ["assets/teapot-stage-1.svg"] },
-        { "assets": ["assets/teapot-stage-2.svg"] },
-        { "assets": ["assets/teapot-stage-3.svg"] },
-        { "assets": ["assets/teapot-stage-4.svg"] },
-        { "assets": ["assets/teapot-stage-5.svg"] },
-        { "assets": ["assets/teapot-stage-6.svg"] }
+        { "assets": ["assets/teapot-stage-1.webp"] },
+        { "assets": ["assets/teapot-stage-2.webp"] },
+        { "assets": ["assets/teapot-stage-3.webp"] },
+        { "assets": ["assets/teapot-stage-4.webp"] },
+        { "assets": ["assets/teapot-stage-5.webp"] },
+        { "assets": ["assets/teapot-stage-6.glb"] }
       ],
       "difficultyRating": "easy"
     },
     {
       "noun": "pinecone",
       "revealStages": [
-        { "assets": ["assets/pinecone-stage-1.svg"] },
-        { "assets": ["assets/pinecone-stage-2.svg"] },
-        { "assets": ["assets/pinecone-stage-3.svg"] },
-        { "assets": ["assets/pinecone-stage-4.svg"] },
-        { "assets": ["assets/pinecone-stage-5.svg"] },
-        { "assets": ["assets/pinecone-stage-6.svg"] }
+        { "assets": ["assets/pinecone-stage-1.webp"] },
+        { "assets": ["assets/pinecone-stage-2.webp"] },
+        { "assets": ["assets/pinecone-stage-3.webp"] },
+        { "assets": ["assets/pinecone-stage-4.webp"] },
+        { "assets": ["assets/pinecone-stage-5.webp"] },
+        { "assets": ["assets/pinecone-stage-6.glb"] }
       ],
       "difficultyRating": "medium"
     }

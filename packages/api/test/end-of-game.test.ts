@@ -80,7 +80,7 @@ describe('The end-of-game payload', () => {
       const end = await finish(api, result);
       expect(end.endOfGame!.lastStageAssets).toEqual(stage6);
       const asset = await api.inject({ method: 'GET', url: end.endOfGame!.lastStageAssets[0].url });
-      expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-6.svg')));
+      expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-6.glb')));
     },
   );
 

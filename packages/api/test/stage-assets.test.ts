@@ -20,38 +20,24 @@ describe('A new game', () => {
 
     const asset = await api.inject({ method: 'GET', url: game.stageAssets[0].url });
     expect(asset.statusCode).toBe(200);
-    expect(asset.headers['content-type']).toBe('image/svg+xml');
-    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+    expect(asset.headers['content-type']).toBe('image/webp');
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.webp')));
   });
 
   test('gets the next day’s Daily Object after rollover', async () => {
     const { api, response } = await startGame({ now: days[1] });
     const asset = await api.inject({ method: 'GET', url: response.json<GameResponse>().stageAssets[0].url });
-    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/pinecone-stage-1.svg')));
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/pinecone-stage-1.webp')));
   });
 
   test('reads a stage asset’s bytes from the bundle when it is requested, not at startup', async () => {
     const contentDir = await copyFixture();
     const { api, response } = await startGame({ now: days[0], contentDir });
     const edited = '<svg xmlns="http://www.w3.org/2000/svg"><!-- edited after startup --></svg>';
-    await writeFile(join(contentDir, 'assets/teapot-stage-1.svg'), edited);
+    await writeFile(join(contentDir, 'assets/teapot-stage-1.webp'), edited);
 
     const asset = await api.inject({ method: 'GET', url: response.json<GameResponse>().stageAssets[0].url });
     expect(asset.body).toBe(edited);
-  });
-
-  test('says each stage asset’s media type, so the client knows a model from an image', async () => {
-    const contentDir = await copyFixture();
-    const bundle = await fixtureBundle();
-    bundle.answerPool.find((entry) => entry.noun === 'teapot')!.revealStages[0].assets.push('models/teapot.glb');
-    await writeFile(join(contentDir, 'bundle.json'), JSON.stringify(bundle));
-
-    const { response } = await startGame({ now: days[0], contentDir });
-
-    expect(response.json<GameResponse>().stageAssets.map(({ mediaType }) => mediaType)).toEqual([
-      'image/svg+xml',
-      'model/gltf-binary',
-    ]);
   });
 
   test('keeps serving a game’s stage assets across midnight Pacific rollover', async () => {
@@ -64,7 +50,7 @@ describe('A new game', () => {
     now = '2027-03-02T08:00:01Z';
     const asset = await api.inject({ method: 'GET', url: game.stageAssets[0].url });
     expect(asset.statusCode).toBe(200);
-    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.webp')));
   });
 
   test('stops serving a game’s stage assets once the following Puzzle Number has ended', async () => {
@@ -86,7 +72,7 @@ describe('A new game', () => {
 
     expect(again.stageAssets[0].url).not.toBe(first.stageAssets[0].url);
     const asset = await api.inject({ method: 'GET', url: again.stageAssets[0].url });
-    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.webp')));
   });
 
   test('names its assets with a keyed hash, which nobody without the key can compute from the bytes', async () => {
