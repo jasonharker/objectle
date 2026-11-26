@@ -1,9 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
-import type { GameResponse } from '@objectle/shared';
-import type { Content } from './content.ts';
-import { signPlayToken } from './play-token.ts';
+import type {
+  ErrorResponse,
+  GameRequest,
+  GameResponse,
+  GuessRequest,
+  GuessVocabularyResponse,
+  Result,
+} from '@objectle/shared';
+import { revealStageCount, type Content } from './content.ts';
+import { signPlayToken, verifyPlayToken, type Progress } from './play-token.ts';
 import { puzzleNumberAt } from './puzzle-clock.ts';
 
 export { loadContent } from './content.ts';
@@ -20,36 +27,92 @@ export interface Dependencies {
   logger?: boolean;
 }
 
+const invalidPlayToken: ErrorResponse = { error: 'The Play Token is not valid.' };
+
 export function buildApp({ clock, launchDate, content, signingKey, clientDir, logger = false }: Dependencies) {
   const app = Fastify({ logger });
   if (clientDir) app.register(fastifyStatic, { root: clientDir });
 
-  /** Reveal Stage 1's assets of the Daily Object scheduled for a Puzzle Number. */
-  const stageOneAssets = (puzzleNumber: number) => content.revealStages(puzzleNumber)?.[0];
+  const vocabulary = new Set(content.bundle.guessVocabulary.map(({ name }) => name));
+  // Sorted, so the order says nothing about which nouns are in the Answer Pool.
+  const guessVocabulary: GuessVocabularyResponse = { names: [...vocabulary].sort() };
 
-  app.post('/api/game', async (_request, reply) => {
+  /** The active Puzzle Number, or why no game can be played right now. */
+  const active = (): { puzzleNumber: number } | { status: number; body: ErrorResponse } => {
     const puzzleNumber = puzzleNumberAt(clock(), launchDate);
-    if (puzzleNumber < 1) return reply.code(404).send({ error: 'Objectle has not launched yet.' });
+    if (puzzleNumber < 1) return { status: 404, body: { error: 'Objectle has not launched yet.' } };
+    if (!content.dailyObject(puzzleNumber)) {
+      return { status: 503, body: { error: 'No Daily Object is scheduled for today.' } };
+    }
+    return { puzzleNumber };
+  };
 
-    const assets = stageOneAssets(puzzleNumber);
-    if (!assets) return reply.code(503).send({ error: 'No Daily Object is scheduled for today.' });
+  /** The Reveal Stage a game is at and its Result, from the Guesses so far. */
+  const play = ({ puzzleNumber, guesses }: Progress): { revealStage: number; result: Result | null } => {
+    const solvedAt = guesses.indexOf(content.dailyObject(puzzleNumber)!) + 1;
+    if (solvedAt > 0) return { revealStage: solvedAt, result: { solved: true, revealStage: solvedAt } };
+    if (guesses.length >= revealStageCount) return { revealStage: revealStageCount, result: { solved: false } };
+    return { revealStage: guesses.length + 1, result: null };
+  };
 
-    const response: GameResponse = {
-      playToken: signPlayToken({ puzzleNumber, guesses: [] }, signingKey),
-      puzzleNumber,
-      revealStage: 1,
+  const position = (progress: Progress): GameResponse => {
+    const { revealStage, result } = play(progress);
+    const assets = content.revealStages(progress.puzzleNumber)![revealStage - 1];
+    return {
+      playToken: signPlayToken(progress, signingKey),
+      puzzleNumber: progress.puzzleNumber,
+      revealStage,
       stageAssets: assets.map(({ id }) => ({ url: `/api/stage-assets/${id}` })),
+      guesses: progress.guesses,
+      result,
     };
-    return response;
+  };
+
+  const freshGame = (puzzleNumber: number) => position({ puzzleNumber, guesses: [] });
+
+  app.get('/api/guess-vocabulary', async () => guessVocabulary);
+
+  // Start or resume. A Play Token for any other Puzzle Number gets a fresh game.
+  app.post<{ Body: GameRequest | null }>('/api/game', async (request, reply) => {
+    const today = active();
+    if ('status' in today) return reply.code(today.status).send(today.body);
+
+    const playToken = request.body?.playToken;
+    if (playToken === undefined) return freshGame(today.puzzleNumber);
+    const progress = verifyPlayToken(playToken, signingKey);
+    if (!progress) return reply.code(400).send(invalidPlayToken);
+    return progress.puzzleNumber === today.puzzleNumber ? position(progress) : freshGame(today.puzzleNumber);
   });
 
-  // A game started just before midnight Pacific keeps its asset URLs after
-  // rollover, so the previous Puzzle Number's assets are served too. A later
-  // Puzzle Number's never are.
+  // A Guess is scored only for the active Puzzle Number; a Play Token for any
+  // other gets a fresh game, unscored.
+  app.post<{ Body: Partial<GuessRequest> | null }>('/api/guess', async (request, reply) => {
+    const today = active();
+    if ('status' in today) return reply.code(today.status).send(today.body);
+
+    const progress = verifyPlayToken(request.body?.playToken, signingKey);
+    if (!progress) return reply.code(400).send(invalidPlayToken);
+    if (progress.puzzleNumber !== today.puzzleNumber) return freshGame(today.puzzleNumber);
+    if (play(progress).result) return reply.code(409).send({ error: 'This game has ended.' });
+
+    const guess = request.body?.guess;
+    if (typeof guess !== 'string' || !vocabulary.has(guess)) {
+      return reply.code(422).send({ error: 'That Guess is not in the Guess Vocabulary.' });
+    }
+    if (progress.guesses.includes(guess)) {
+      return reply.code(422).send({ error: `You already guessed ${guess}; it does not count again.` });
+    }
+    return position({ puzzleNumber: progress.puzzleNumber, guesses: [...progress.guesses, guess] });
+  });
+
+  // Asset ids are content hashes, so a later Reveal Stage's asset cannot be
+  // fetched before a response has named it. A game started just before
+  // midnight Pacific keeps its asset URLs after rollover, so the previous
+  // Puzzle Number's assets are served too. A later Puzzle Number's never are.
   app.get<{ Params: { id: string } }>('/api/stage-assets/:id', async (request, reply) => {
     const active = puzzleNumberAt(clock(), launchDate);
     const asset = [active, active - 1]
-      .flatMap((puzzleNumber) => stageOneAssets(puzzleNumber) ?? [])
+      .flatMap((puzzleNumber) => content.revealStages(puzzleNumber)?.flat() ?? [])
       .find(({ id }) => id === request.params.id);
     if (!asset) return reply.code(404).send({ error: 'No such stage asset.' });
     return reply.type(asset.mediaType).send(await readFile(asset.file));

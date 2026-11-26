@@ -33,6 +33,13 @@ test('refuses an Answer Pool entry without Reveal Stages', async () => {
   await expect(loadContent(dir)).rejects.toThrow(/pinecone.*Reveal Stages/);
 });
 
+test('refuses an Answer Pool entry without six Reveal Stages', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.answerPool[0].revealStages.pop();
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/teapot.*5 Reveal Stages/);
+});
+
 test('refuses two stage assets with the same asset id', async () => {
   const dir = await editedFixture((bundle) => {
     bundle.answerPool[1].revealStages[0].assets = ['assets/pinecone-copy.svg'];

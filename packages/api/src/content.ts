@@ -15,8 +15,13 @@ export interface StageAsset {
   file: string;
 }
 
+/** Every Answer Pool object has this many Reveal Stages. */
+export const revealStageCount = 6;
+
 export interface Content {
   bundle: ContentBundle;
+  /** Name of the Daily Object scheduled for a Puzzle Number, or undefined if none is scheduled. */
+  dailyObject(puzzleNumber: number): string | undefined;
   /**
    * The Reveal Stages' assets of the Daily Object scheduled for a Puzzle
    * Number (index 0 is Reveal Stage 1), or undefined if none is scheduled.
@@ -60,7 +65,11 @@ export async function loadContent(dir: string): Promise<Content> {
 
   const problems: string[] = [];
   for (const entry of bundle.answerPool) {
-    if (entry.revealStages.length === 0) problems.push(`Answer Pool noun "${entry.noun}" has no Reveal Stages`);
+    if (entry.revealStages.length !== revealStageCount) {
+      problems.push(
+        `Answer Pool noun "${entry.noun}" has ${entry.revealStages.length} Reveal Stages, not ${revealStageCount}`,
+      );
+    }
   }
   for (const { puzzleNumber, noun } of bundle.schedule) {
     if (!stagesByNoun.has(noun)) {
@@ -78,6 +87,7 @@ export async function loadContent(dir: string): Promise<Content> {
   const scheduled = new Map(bundle.schedule.map((entry) => [entry.puzzleNumber, entry.noun]));
   return {
     bundle,
+    dailyObject: (puzzleNumber) => scheduled.get(puzzleNumber),
     revealStages: (puzzleNumber) => {
       const noun = scheduled.get(puzzleNumber);
       return noun === undefined ? undefined : stagesByNoun.get(noun);

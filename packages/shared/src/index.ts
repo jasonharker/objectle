@@ -13,7 +13,7 @@ export interface GuessVocabularyEntry {
   model: string;
   /** One of the twelve Categories (set still to be written down, #3). */
   category: string;
-  /** Real-world size in metres. Which dimension it measures is still open (#4). */
+  /** Size: the longest dimension, in metres, of a typical example of the noun (ADR-0005). */
   size: number;
   naturalOrMade: 'natural' | 'made';
   /** One of the enumerated Primary Materials (set still to be written down, #3). */
@@ -52,10 +52,41 @@ export interface StageAsset {
   url: string;
 }
 
-/** Response to "start or resume" (POST /api/game). */
+/** How a game ended: solved at a Reveal Stage, or failed after six Guesses. */
+export type Result = { solved: true; revealStage: number } | { solved: false };
+
+/**
+ * A game's current position: the response to "start or resume"
+ * (POST /api/game) and to a Guess (POST /api/guess).
+ */
 export interface GameResponse {
   playToken: string;
   puzzleNumber: number;
   revealStage: number;
   stageAssets: StageAsset[];
+  /** Guess Vocabulary names guessed so far, in order. */
+  guesses: string[];
+  /** The game's Result, or null while it is still being played. */
+  result: Result | null;
+}
+
+/** Request body of "start or resume": the stored Play Token, if any. */
+export interface GameRequest {
+  playToken?: string;
+}
+
+/** Request body of a Guess. */
+export interface GuessRequest {
+  playToken: string;
+  guess: string;
+}
+
+/** Response to GET /api/guess-vocabulary: names only, never Attributes. */
+export interface GuessVocabularyResponse {
+  names: string[];
+}
+
+/** Body of every refused request. */
+export interface ErrorResponse {
+  error: string;
 }
