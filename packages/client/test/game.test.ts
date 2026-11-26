@@ -2,7 +2,7 @@
 // run in-process by the seam-1 harness.
 import { describe, expect, test } from 'vitest';
 import { startApi } from '../../api/test/harness.ts';
-import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from '../src/game.ts';
+import { loadCredits, loadGuessVocabulary, outageMessage, startGame, submitGuess } from '../src/game.ts';
 
 async function apiFetch(now: string): Promise<typeof fetch> {
   const api = await startApi({ now });
@@ -100,6 +100,27 @@ test('drops a stored Play Token the API rejects and starts a fresh game', async 
   expect(storage.getItem('objectle.playToken')).toBe(game.playToken);
 });
 
+test('the Guess that ends the game brings the end-of-game payload', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  await startGame(fetch, storage);
+  await submitGuess(fetch, storage, 'teapot');
+
+  const end = await submitGuess(fetch, storage, 'pinecone');
+
+  expect(end.result).toEqual({ solved: true, revealStage: 2 });
+  expect(end.endOfGame?.dailyObject.name).toBe('pinecone');
+  expect(end.endOfGame?.ghostCredits.map(({ name }) => name)).toEqual(['teapot']);
+  expect(end.endOfGame?.distribution).toEqual({ solved: [0, 1, 0, 0, 0, 0], failed: 0 });
+  expect(end.endOfGame?.beatPercentage).toBeNull();
+});
+
+test('loads every model’s Credit for the credits page', async () => {
+  const credits = await loadCredits(await apiFetch(day2));
+  expect(credits.map(({ name }) => name)).toContain('wooden spoon');
+  expect(credits.find(({ name }) => name === 'pinecone')?.credit.author).toBe('Fixture Author B');
+});
+
 describe('when the API cannot be reached', () => {
   const unreachable = (async () => {
     throw new TypeError('fetch failed');
@@ -115,6 +136,7 @@ describe('when the API cannot be reached', () => {
     await expect(startGame(fetch, storage)).rejects.toThrow(outageMessage);
     await expect(submitGuess(fetch, storage, 'teapot')).rejects.toThrow(outageMessage);
     await expect(loadGuessVocabulary(fetch)).rejects.toThrow(outageMessage);
+    await expect(loadCredits(fetch)).rejects.toThrow(outageMessage);
     expect(storage.getItem('objectle.playToken')).toBe('stored');
   });
 });

@@ -1,4 +1,5 @@
 import type { GameResponse } from '@objectle/shared';
+import { creditItem } from './credit.ts';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from './game.ts';
 
 const puzzleNumber = document.querySelector('#puzzle-number')!;
@@ -10,6 +11,7 @@ const guessInput = document.querySelector<HTMLInputElement>('#guess')!;
 const guessButton = guessForm.querySelector('button')!;
 const suggestions = document.querySelector('#guess-vocabulary')!;
 const guessList = document.querySelector('#guesses')!;
+const endSection = document.querySelector<HTMLElement>('#end-of-game')!;
 
 let names: string[] = [];
 let current: GameResponse | undefined;
@@ -42,6 +44,30 @@ function render(game: GameResponse) {
       ? `Solved at Reveal Stage ${game.result.revealStage}.`
       : 'Not solved in six Guesses.';
   }
+  renderEndOfGame(game);
+}
+
+function renderEndOfGame({ puzzleNumber, endOfGame }: GameResponse) {
+  endSection.hidden = endOfGame === null;
+  if (endOfGame === null) return;
+  const { dailyObject, ghostCredits, distribution, beatPercentage } = endOfGame;
+  document.querySelector('#daily-object')!.textContent = `The Daily Object was: ${dailyObject.name}`;
+  document.querySelector('#beat-percentage')!.textContent =
+    beatPercentage === null
+      ? `You are the first to finish #${puzzleNumber}.`
+      : `You beat ${Math.round(beatPercentage)}% of the other players who finished #${puzzleNumber}.`;
+  const rows = [
+    ...distribution.solved.map((count, index) => [`Solved at Reveal Stage ${index + 1}`, count] as const),
+    ['Not solved', distribution.failed] as const,
+  ];
+  document.querySelector('#distribution')!.replaceChildren(
+    ...rows.map(([label, count]) => {
+      const item = document.createElement('li');
+      item.textContent = `${label}: ${count}`;
+      return item;
+    }),
+  );
+  document.querySelector('#game-credits')!.replaceChildren(...[dailyObject, ...ghostCredits].map(creditItem));
 }
 
 function showError(error: unknown) {
