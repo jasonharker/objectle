@@ -143,6 +143,7 @@ export function buildApp({
     const distribution = counted ?? (await resultCounters.distribution(puzzleNumber));
     return {
       dailyObject: modelCredit(dailyObject),
+      lastStageAssets: stageAssets(puzzleNumber, content.revealStages(puzzleNumber)![revealStageCount - 1]),
       ghostCredits: guesses.filter((guess) => guess !== dailyObject).map(modelCredit),
       distribution,
       beatPercentage: beatPercentage(distribution, result),
@@ -157,6 +158,7 @@ export function buildApp({
       puzzleNumber: progress.puzzleNumber,
       revealStage,
       stageAssets: stageAssets(progress.puzzleNumber, assets),
+      firstLetter: revealStage === revealStageCount ? content.dailyObject(progress.puzzleNumber)!.charAt(0) : null,
       guesses: progress.guesses,
       result,
       wrongGuesses: wrongGuesses(progress),

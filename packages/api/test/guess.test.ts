@@ -219,6 +219,12 @@ describe('Reveal Stages', () => {
     }
   });
 
+  test('only Reveal Stage 6 shows the first letter of the Daily Object’s name', async () => {
+    const { api, game } = await newGame();
+    const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];
+    expect(games.map((g) => g.firstLetter)).toEqual([null, null, null, null, null, 't']);
+  });
+
   test('each Reveal Stage serves that stage’s own assets', async () => {
     const { api, game } = await newGame();
     const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];

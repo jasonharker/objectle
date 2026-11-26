@@ -72,6 +72,18 @@ describe('The end-of-game payload', () => {
     );
   });
 
+  test.each([solvedAt(1), solvedAt(4), failed])(
+    'names Reveal Stage 6’s assets, so the Daily Object can be drawn beside its Ghosts (%o)',
+    async (result) => {
+      const api = await startApi({ now: day1 });
+      const stage6 = (await finish(api, failed)).stageAssets;
+      const end = await finish(api, result);
+      expect(end.endOfGame!.lastStageAssets).toEqual(stage6);
+      const asset = await api.inject({ method: 'GET', url: end.endOfGame!.lastStageAssets[0].url });
+      expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-6.svg')));
+    },
+  );
+
   test('a game solved at Reveal Stage 1 has no Ghost Credits', async () => {
     const api = await startApi({ now: day1 });
     expect((await finish(api, solvedAt(1))).endOfGame!.ghostCredits).toEqual([]);
