@@ -40,6 +40,11 @@ figure canvas {
   border-radius: 0.5rem;
 }
 
+/* Reveal Stage images are transparent where background shows; this is the backdrop, as the canvas's clear colour is. */
+#stage img {
+  background: #3a3d52;
+}
+
 #guess-form:not([hidden]) {
   display: flex;
   gap: 0.5rem;

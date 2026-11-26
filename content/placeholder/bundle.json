@@ -55,6 +55,62 @@
         "license": "CC0-1.0"
       },
       "inAnswerPool": false
+    },
+    {
+      "name": "rubber duck",
+      "model": "models/rubber-duck.glb",
+      "category": "Sport & Play",
+      "size": 0.1,
+      "naturalOrMade": "made",
+      "primaryMaterial": "plastic",
+      "credit": {
+        "author": "Fixture Author E",
+        "source": "fixture",
+        "license": "CC0-1.0"
+      },
+      "inAnswerPool": false
+    },
+    {
+      "name": "tennis ball",
+      "model": "models/tennis-ball.glb",
+      "category": "Sport & Play",
+      "size": 0.067,
+      "naturalOrMade": "made",
+      "primaryMaterial": "fabric",
+      "credit": {
+        "author": "Fixture Author F",
+        "source": "fixture",
+        "license": "CC0-1.0"
+      },
+      "inAnswerPool": false
+    },
+    {
+      "name": "paperclip",
+      "model": "models/paperclip.glb",
+      "category": "Office & Study",
+      "size": 0.033,
+      "naturalOrMade": "made",
+      "primaryMaterial": "metal",
+      "credit": {
+        "author": "Fixture Author G",
+        "source": "fixture",
+        "license": "CC0-1.0"
+      },
+      "inAnswerPool": false
+    },
+    {
+      "name": "house brick",
+      "model": "models/house-brick.glb",
+      "category": "Tools & Repair",
+      "size": 0.215,
+      "naturalOrMade": "made",
+      "primaryMaterial": "stone",
+      "credit": {
+        "author": "Fixture Author H",
+        "source": "fixture",
+        "license": "CC0-1.0"
+      },
+      "inAnswerPool": false
     }
   ],
   "answerPool": [
