@@ -39,3 +39,26 @@ figure canvas {
   object-fit: contain;
   border-radius: 0.5rem;
 }
+
+#guess-form:not([hidden]) {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+
+#guess-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.5rem;
+}
+
+#guess-form button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+}
+
+#guesses {
+  text-align: left;
+}
