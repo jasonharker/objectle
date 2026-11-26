@@ -113,7 +113,11 @@ export function buildApp({
         return {
           guess,
           feedback: feedback(noun, dailyObject),
-          ghost: { url: `/api/models/${content.modelOf(guess)!.id}`, relativeSize: noun.size / dailyObject.size },
+          ghost: {
+            url: `/api/models/${content.modelOf(guess)!.id}`,
+            // Rounded, so one Guess does not give away the Daily Object's exact Size.
+            relativeSize: Number((noun.size / dailyObject.size).toPrecision(2)),
+          },
         };
       });
   };

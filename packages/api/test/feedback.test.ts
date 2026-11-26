@@ -77,6 +77,13 @@ describe('Feedback', () => {
     ])('on %s, a Guess sized "%s" reads %s', async (now, guess, size) => {
       expect((await feedbackFor(now, guess, await boundaryFixture())).size).toBe(size);
     });
+
+    test('is computed on exact Sizes, not on the rounded relative size the Ghost carries', async () => {
+      const { api, game } = await newGame(day1, await boundaryFixture());
+      const [, next] = await playGuesses(api, game.playToken, ['teapot ÷ 1.25', 'just under teapot ÷ 1.25']);
+      expect(next.wrongGuesses.map(({ ghost }) => ghost.relativeSize)).toEqual([0.8, 0.8]);
+      expect(next.wrongGuesses.map(({ feedback }) => feedback.size)).toEqual(['similar', 'bigger']);
+    });
   });
 
   test('is identical for the same Guess across requests and games', async () => {
@@ -131,15 +138,13 @@ describe('Ghosts', () => {
     expect(model.rawPayload).toEqual(await readFile(join(fixtureDir, 'models/claw-hammer.glb')));
   });
 
-  test('a Ghost’s relative size is its Size as a multiple of the Daily Object’s', async () => {
-    const bundle = await fixtureBundle();
-    const size = (name: string) => bundle.guessVocabulary.find((noun) => noun.name === name)!.size;
+  // Two significant figures: enough to draw the Ghost, not enough to recover
+  // the Daily Object's exact Size from one Guess.
+  test('a Ghost’s relative size is its Size as a multiple of the Daily Object’s, to two significant figures', async () => {
+    // Teapot 0.24 m: claw hammer 0.33 / 0.24 = 1.375, paperclip 0.033 / 0.24 = 0.1375.
     const { api, game } = await newGame(day1);
     const games = await playGuesses(api, game.playToken, ['claw hammer', 'paperclip']);
-    expect(games[1].wrongGuesses.map(({ ghost }) => ghost.relativeSize)).toEqual([
-      size('claw hammer') / size('teapot'),
-      size('paperclip') / size('teapot'),
-    ]);
+    expect(games[1].wrongGuesses.map(({ ghost }) => ghost.relativeSize)).toEqual([1.4, 0.14]);
   });
 
   test('a Ghost’s model URL names no noun and is the same whatever the Daily Object', async () => {
