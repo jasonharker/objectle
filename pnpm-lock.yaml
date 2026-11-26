@@ -217,6 +217,34 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
+  packages/authoring:
+    dependencies:
+      '@objectle/client':
+        specifier: workspace:*
+        version: link:../client
+      '@objectle/shared':
+        specifier: workspace:*
+        version: link:../shared
+      playwright-core:
+        specifier: 1.65.1
+        version: 1.65.1
+      three:
+        specifier: ^0.187.0
+        version: 0.187.0
+      vite:
+        specifier: ^8.3.8
+        version: 8.3.8(@types/node@26.6.6)
+    devDependencies:
+      '@objectle/api':
+        specifier: workspace:*
+        version: link:../api
+      '@objectle/curation':
+        specifier: workspace:*
+        version: link:../curation
+      '@types/three':
+        specifier: ^0.187.0
+        version: 0.187.0
+
   packages/client:
     dependencies:
       '@objectle/shared':
@@ -898,6 +926,11 @@ packages:
 
   pino@10.4.0:
     resolution: {integrity: sha512-bk1ZMTwG/Vymx+zPoa28MhNzucFvXJWp3csrSuxuHPSMeUettaCoQ5Jvg07mtC4JGNpcfTwz41oVCnNgBK9+vA==}
+    hasBin: true
+
+  playwright-core@1.65.1:
+    resolution: {integrity: sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==}
+    engines: {node: '>=20'}
     hasBin: true
 
   postcss@8.5.33:
@@ -1649,6 +1682,8 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.1
+
+  playwright-core@1.65.1: {}
 
   postcss@8.5.33:
     dependencies:

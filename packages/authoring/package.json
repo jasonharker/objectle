@@ -1,0 +1,17 @@
+{
+  "name": "@objectle/authoring",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@objectle/client": "workspace:*",
+    "@objectle/shared": "workspace:*",
+    "playwright-core": "1.65.1",
+    "three": "^0.187.0",
+    "vite": "^8.3.8"
+  },
+  "devDependencies": {
+    "@objectle/api": "workspace:*",
+    "@objectle/curation": "workspace:*",
+    "@types/three": "^0.187.0"
+  }
+}
