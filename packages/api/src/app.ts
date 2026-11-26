@@ -8,8 +8,10 @@ import type {
   GuessRequest,
   GuessVocabularyResponse,
   Result,
+  WrongGuess,
 } from '@objectle/shared';
 import { revealStageCount, type Content } from './content.ts';
+import { feedback } from './feedback.ts';
 import { signPlayToken, verifyPlayToken, type Progress } from './play-token.ts';
 import { puzzleNumberAt } from './puzzle-clock.ts';
 
@@ -55,6 +57,21 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
     return { revealStage: guesses.length + 1, result: null };
   };
 
+  /** Feedback and a Ghost for each wrong Guess. A correct Guess has neither. */
+  const wrongGuesses = ({ puzzleNumber, guesses }: Progress): WrongGuess[] => {
+    const dailyObject = content.noun(content.dailyObject(puzzleNumber)!)!;
+    return guesses
+      .filter((guess) => guess !== dailyObject.name)
+      .map((guess) => {
+        const noun = content.noun(guess)!;
+        return {
+          guess,
+          feedback: feedback(noun, dailyObject),
+          ghost: { url: `/api/models/${content.modelOf(guess)!.id}`, relativeSize: noun.size / dailyObject.size },
+        };
+      });
+  };
+
   const position = (progress: Progress): GameResponse => {
     const { revealStage, result } = play(progress);
     const assets = content.revealStages(progress.puzzleNumber)![revealStage - 1];
@@ -65,6 +82,7 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
       stageAssets: assets.map(({ id }) => ({ url: `/api/stage-assets/${id}` })),
       guesses: progress.guesses,
       result,
+      wrongGuesses: wrongGuesses(progress),
     };
   };
 
@@ -116,6 +134,15 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
       .find(({ id }) => id === request.params.id);
     if (!asset) return reply.code(404).send({ error: 'No such stage asset.' });
     return reply.type(asset.mediaType).send(await readFile(asset.file));
+  });
+
+  // Ghost models. Any Guess Vocabulary model is served by its content hash,
+  // whatever the Daily Object, so neither a URL nor whether it is served says
+  // anything about the Daily Object. A URL is only ever named for a wrong Guess.
+  app.get<{ Params: { id: string } }>('/api/models/:id', async (request, reply) => {
+    const model = content.modelById(request.params.id);
+    if (!model) return reply.code(404).send({ error: 'No such model.' });
+    return reply.type(model.mediaType).send(await readFile(model.file));
   });
 
   return app;

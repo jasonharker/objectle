@@ -55,6 +55,37 @@ export interface StageAsset {
 /** How a game ended: solved at a Reveal Stage, or failed after six Guesses. */
 export type Result = { solved: true; revealStage: number } | { solved: false };
 
+export type Match = 'match' | 'no match';
+
+/**
+ * Feedback on a wrong Guess: each Attribute compared against the Daily
+ * Object's. Size reads whether the Daily Object is bigger, smaller or similar
+ * (neither Size more than 1.25 times the other) compared with the Guess.
+ */
+export interface Feedback {
+  category: Match;
+  size: 'bigger' | 'smaller' | 'similar';
+  naturalOrMade: Match;
+  primaryMaterial: Match;
+}
+
+/** A wrong Guess's model, drawn beside the hidden Daily Object at true relative scale. */
+export interface Ghost {
+  /** The Guess's model, binary glTF; the URL depends on the model alone, never on the Daily Object. */
+  url: string;
+  /**
+   * The Guess's Size as a multiple of the Daily Object's: draw the Ghost with
+   * its longest dimension this many times the hidden Daily Object's (ADR-0005).
+   */
+  relativeSize: number;
+}
+
+export interface WrongGuess {
+  guess: string;
+  feedback: Feedback;
+  ghost: Ghost;
+}
+
 /**
  * A game's current position: the response to "start or resume"
  * (POST /api/game) and to a Guess (POST /api/guess).
@@ -68,6 +99,8 @@ export interface GameResponse {
   guesses: string[];
   /** The game's Result, or null while it is still being played. */
   result: Result | null;
+  /** Every wrong Guess so far, in order, with its Feedback and Ghost. */
+  wrongGuesses: WrongGuess[];
 }
 
 /** Request body of "start or resume": the stored Play Token, if any. */

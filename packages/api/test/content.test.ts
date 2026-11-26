@@ -55,3 +55,10 @@ test('reports every problem at once', async () => {
   });
   await expect(loadContent(dir)).rejects.toThrow(/pinecone[^]*claw hammer|claw hammer[^]*pinecone/);
 });
+
+test('refuses a Guess Vocabulary noun whose model file is missing', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary[2].model = 'models/missing.glb';
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/wooden spoon.*models\/missing\.glb/);
+});

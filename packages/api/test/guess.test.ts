@@ -218,12 +218,11 @@ describe('Reveal Stages', () => {
   test('before the game ends, no response discloses the Daily Object, its Attributes or the Schedule', async () => {
     const bundle = await fixtureBundle();
     const noun = bundle.guessVocabulary.find(({ name }) => name === daily)!;
+    // Attribute values are matched as whole words: Feedback's own field names
+    // contain them ("made" in naturalOrMade).
+    const attributes = [noun.category, noun.primaryMaterial, noun.naturalOrMade, String(noun.size)];
     const secrets = [
       noun.name,
-      noun.category,
-      noun.primaryMaterial,
-      noun.naturalOrMade,
-      String(noun.size),
       noun.model,
       noun.credit.author,
       ...bundle.answerPool.flatMap((entry) => entry.revealStages.flatMap((stage) => stage.assets)),
@@ -241,6 +240,9 @@ describe('Reveal Stages', () => {
       .toLowerCase();
 
     for (const secret of secrets) expect(disclosed).not.toContain(secret.toLowerCase());
+    for (const value of attributes) {
+      expect(disclosed).not.toMatch(new RegExp(`\\b${value.toLowerCase().replaceAll('.', '\\.')}\\b`));
+    }
     expect(disclosed).not.toContain('schedule');
   });
 });
