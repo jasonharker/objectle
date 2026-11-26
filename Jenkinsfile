@@ -35,6 +35,18 @@ spec:
     - sleep
     args:
     - 99d
+  # Throwaway database for the Postgres Result counter tests; pod-local and
+  # gone with the pod, so its password is not a secret.
+  - name: postgres
+    image: postgres:16-alpine
+    env:
+    - name: POSTGRES_PASSWORD
+      value: objectle-test
+    resources:
+      requests:
+        memory: 128Mi
+      limits:
+        memory: 256Mi
 """
         }
     }
@@ -48,7 +60,16 @@ spec:
 
     stages {
         stage('Test') {
+            environment {
+                OBJECTLE_TEST_DATABASE_URL = 'postgres://postgres:objectle-test@localhost:5432/postgres'
+            }
             steps {
+                container('postgres') {
+                    // Over TCP, so the image's initdb-only socket server does not count as ready.
+                    timeout(time: 2, unit: 'MINUTES') {
+                        sh 'until pg_isready -h localhost -U postgres; do sleep 1; done'
+                    }
+                }
                 container('node') {
                     sh '$PNPM install --frozen-lockfile && $PNPM typecheck && $PNPM test && $PNPM build'
                 }

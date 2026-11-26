@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import type { ContentBundle } from '@objectle/shared';
+import type { ContentBundle, GuessVocabularyEntry } from '@objectle/shared';
 
 /** A Reveal Stage asset, indexed at startup; its bytes stay on disk until it is requested. */
 export interface StageAsset {
@@ -15,16 +15,27 @@ export interface StageAsset {
   file: string;
 }
 
+/** Every Answer Pool object has this many Reveal Stages. */
+export const revealStageCount = 6;
+
 export interface Content {
   bundle: ContentBundle;
+  /** Name of the Daily Object scheduled for a Puzzle Number, or undefined if none is scheduled. */
+  dailyObject(puzzleNumber: number): string | undefined;
   /**
    * The Reveal Stages' assets of the Daily Object scheduled for a Puzzle
    * Number (index 0 is Reveal Stage 1), or undefined if none is scheduled.
    */
   revealStages(puzzleNumber: number): StageAsset[][] | undefined;
+  /** A Guess Vocabulary noun's entry, or undefined if it is not in the Guess Vocabulary. */
+  noun(name: string): GuessVocabularyEntry | undefined;
+  /** A Guess Vocabulary noun's model, indexed like a stage asset: its id is the SHA-256 of its bytes. */
+  modelOf(name: string): StageAsset | undefined;
+  /** The Guess Vocabulary model with an id, or undefined if there is none. */
+  modelById(id: string): StageAsset | undefined;
 }
 
-const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml' };
+const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
 
 async function indexAsset(dir: string, path: string): Promise<StageAsset> {
   const file = join(dir, path);
@@ -59,8 +70,28 @@ export async function loadContent(dir: string): Promise<Content> {
   }
 
   const problems: string[] = [];
+  const models = new Map<string, StageAsset>();
+  for (const { name, model, size } of bundle.guessVocabulary) {
+    if (!(size > 0)) problems.push(`Guess Vocabulary noun "${name}" has Size ${size}, which is not positive`);
+    try {
+      models.set(name, await indexAsset(dir, model));
+    } catch {
+      problems.push(`Guess Vocabulary noun "${name}" has no readable model file ${model}`);
+    }
+  }
+  const inVocabulary = new Set(bundle.guessVocabulary.map(({ name }) => name));
   for (const entry of bundle.answerPool) {
-    if (entry.revealStages.length === 0) problems.push(`Answer Pool noun "${entry.noun}" has no Reveal Stages`);
+    if (!inVocabulary.has(entry.noun)) {
+      problems.push(`Answer Pool noun "${entry.noun}" has no Guess Vocabulary entry`);
+    }
+    if (entry.revealStages.length !== revealStageCount) {
+      problems.push(
+        `Answer Pool noun "${entry.noun}" has ${entry.revealStages.length} Reveal Stages, not ${revealStageCount}`,
+      );
+    }
+    for (const [index, stage] of entry.revealStages.entries()) {
+      if (stage.assets.length === 0) problems.push(`Answer Pool noun "${entry.noun}" Reveal Stage ${index + 1} has no assets`);
+    }
   }
   for (const { puzzleNumber, noun } of bundle.schedule) {
     if (!stagesByNoun.has(noun)) {
@@ -76,8 +107,14 @@ export async function loadContent(dir: string): Promise<Content> {
   if (problems.length > 0) throw new Error(`invalid content bundle in ${dir}:\n${problems.join('\n')}`);
 
   const scheduled = new Map(bundle.schedule.map((entry) => [entry.puzzleNumber, entry.noun]));
+  const nouns = new Map(bundle.guessVocabulary.map((entry) => [entry.name, entry]));
+  const modelsById = new Map([...models.values()].map((model) => [model.id, model]));
   return {
+    noun: (name) => nouns.get(name),
+    modelOf: (name) => models.get(name),
+    modelById: (id) => modelsById.get(id),
     bundle,
+    dailyObject: (puzzleNumber) => scheduled.get(puzzleNumber),
     revealStages: (puzzleNumber) => {
       const noun = scheduled.get(puzzleNumber);
       return noun === undefined ? undefined : stagesByNoun.get(noun);

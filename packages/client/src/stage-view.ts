@@ -1,12 +1,41 @@
-import { Box3, PerspectiveCamera, Scene, Sphere, Vector3, WebGLRenderer, type Object3D } from 'three';
+import {
+  Box3,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+  Sphere,
+  SphereGeometry,
+  Vector3,
+  WebGLRenderer,
+  type Object3D,
+} from 'three';
 import { normalizeModel } from '@objectle/shared/shader';
+
+/** Scale a model so its longest dimension is `length`. */
+export function scaleToLongestDimension(object: Object3D, length: number): Object3D {
+  const size = new Box3().setFromObject(object).getSize(new Vector3());
+  object.scale.multiplyScalar(length / Math.max(size.x, size.y, size.z));
+  return object;
+}
+
+/**
+ * What the Ghosts stand beside: a plain grey ball, longest dimension 1, in
+ * the Daily Object's place. Ghosts are scaled by their relative size, so the
+ * ball is the Daily Object's Size and nothing else about it. It stands in
+ * until the Reveal Stage asset format (#5) gives the Ghost view geometry.
+ */
+export function hiddenDailyObject(): Object3D {
+  return new Mesh(new SphereGeometry(0.5, 32, 16), new MeshStandardMaterial({ color: 0x8a8d99 }));
+}
 
 /**
  * Draw a model and its Ghosts through the normalization shader. Models are at
  * real-world scale, so placing them side by side unscaled shows the Ghosts at
- * true relative scale.
+ * true relative scale. Returns a function that stops redrawing on resize and
+ * releases the canvas's WebGL context; call it before replacing the drawing.
  */
-export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Object3D[] = []): void {
+export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Object3D[] = []): () => void {
   const scene = new Scene();
   let x = 0;
   for (const object of [model, ...ghosts]) {
@@ -34,5 +63,12 @@ export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Ob
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
   };
-  new ResizeObserver(render).observe(canvas);
+  const observer = new ResizeObserver(render);
+  observer.observe(canvas);
+  return () => {
+    observer.disconnect();
+    renderer.dispose();
+    // Browsers cap live WebGL contexts; dispose() alone keeps this one until GC.
+    renderer.forceContextLoss();
+  };
 }

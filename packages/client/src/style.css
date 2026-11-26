@@ -39,3 +39,45 @@ figure canvas {
   object-fit: contain;
   border-radius: 0.5rem;
 }
+
+#guess-form:not([hidden]) {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+
+#guess-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.5rem;
+}
+
+#guess-form button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+}
+
+#guesses {
+  text-align: left;
+}
+
+#ghosts canvas {
+  aspect-ratio: 2;
+}
+
+#end-of-game,
+#credits {
+  text-align: left;
+}
+
+footer {
+  margin: 1.5rem 0 0;
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+footer a {
+  color: inherit;
+}

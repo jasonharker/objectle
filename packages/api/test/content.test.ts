@@ -33,6 +33,13 @@ test('refuses an Answer Pool entry without Reveal Stages', async () => {
   await expect(loadContent(dir)).rejects.toThrow(/pinecone.*Reveal Stages/);
 });
 
+test('refuses an Answer Pool entry without six Reveal Stages', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.answerPool[0].revealStages.pop();
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/teapot.*5 Reveal Stages/);
+});
+
 test('refuses two stage assets with the same asset id', async () => {
   const dir = await editedFixture((bundle) => {
     bundle.answerPool[1].revealStages[0].assets = ['assets/pinecone-copy.svg'];
@@ -47,4 +54,32 @@ test('reports every problem at once', async () => {
     bundle.schedule.push({ puzzleNumber: 4, noun: 'claw hammer', pinned: false });
   });
   await expect(loadContent(dir)).rejects.toThrow(/pinecone[^]*claw hammer|claw hammer[^]*pinecone/);
+});
+
+test('refuses a Guess Vocabulary noun whose model file is missing', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary[2].model = 'models/missing.glb';
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/wooden spoon.*models\/missing\.glb/);
+});
+
+test('refuses an Answer Pool noun that is not in the Guess Vocabulary', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary = bundle.guessVocabulary.filter(({ name }) => name !== 'pinecone');
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/Answer Pool noun "pinecone".*Guess Vocabulary/);
+});
+
+test('refuses a Reveal Stage without assets', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.answerPool[0].revealStages[3].assets = [];
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/teapot.*Reveal Stage 4.*no assets/);
+});
+
+test.each([0, -0.1])('refuses a Guess Vocabulary noun with Size %s', async (size) => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary[3].size = size;
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/claw hammer.*Size/);
 });

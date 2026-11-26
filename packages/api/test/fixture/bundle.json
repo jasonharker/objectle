@@ -39,17 +39,71 @@
       "primaryMaterial": "wood",
       "credit": { "author": "Fixture Author D", "source": "fixture", "license": "CC0-1.0" },
       "inAnswerPool": false
+    },
+    {
+      "name": "rubber duck",
+      "model": "models/rubber-duck.glb",
+      "category": "toy",
+      "size": 0.1,
+      "naturalOrMade": "made",
+      "primaryMaterial": "plastic",
+      "credit": { "author": "Fixture Author E", "source": "fixture", "license": "CC0-1.0" },
+      "inAnswerPool": false
+    },
+    {
+      "name": "tennis ball",
+      "model": "models/tennis-ball.glb",
+      "category": "sport",
+      "size": 0.067,
+      "naturalOrMade": "made",
+      "primaryMaterial": "fabric",
+      "credit": { "author": "Fixture Author F", "source": "fixture", "license": "CC0-1.0" },
+      "inAnswerPool": false
+    },
+    {
+      "name": "paperclip",
+      "model": "models/paperclip.glb",
+      "category": "stationery",
+      "size": 0.033,
+      "naturalOrMade": "made",
+      "primaryMaterial": "metal",
+      "credit": { "author": "Fixture Author G", "source": "fixture", "license": "CC0-1.0" },
+      "inAnswerPool": false
+    },
+    {
+      "name": "house brick",
+      "model": "models/house-brick.glb",
+      "category": "building",
+      "size": 0.215,
+      "naturalOrMade": "made",
+      "primaryMaterial": "stone",
+      "credit": { "author": "Fixture Author H", "source": "fixture", "license": "CC0-1.0" },
+      "inAnswerPool": false
     }
   ],
   "answerPool": [
     {
       "noun": "teapot",
-      "revealStages": [{ "assets": ["assets/teapot-stage-1.svg"] }],
+      "revealStages": [
+        { "assets": ["assets/teapot-stage-1.svg"] },
+        { "assets": ["assets/teapot-stage-2.svg"] },
+        { "assets": ["assets/teapot-stage-3.svg"] },
+        { "assets": ["assets/teapot-stage-4.svg"] },
+        { "assets": ["assets/teapot-stage-5.svg"] },
+        { "assets": ["assets/teapot-stage-6.svg"] }
+      ],
       "difficultyRating": "easy"
     },
     {
       "noun": "pinecone",
-      "revealStages": [{ "assets": ["assets/pinecone-stage-1.svg"] }],
+      "revealStages": [
+        { "assets": ["assets/pinecone-stage-1.svg"] },
+        { "assets": ["assets/pinecone-stage-2.svg"] },
+        { "assets": ["assets/pinecone-stage-3.svg"] },
+        { "assets": ["assets/pinecone-stage-4.svg"] },
+        { "assets": ["assets/pinecone-stage-5.svg"] },
+        { "assets": ["assets/pinecone-stage-6.svg"] }
+      ],
       "difficultyRating": "medium"
     }
   ],

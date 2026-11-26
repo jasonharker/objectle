@@ -4,7 +4,7 @@ import { cp, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildApp, loadContent } from '../src/app.ts';
+import { buildApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
 
 export const fixtureDir = fileURLToPath(new URL('./fixture/', import.meta.url));
@@ -18,6 +18,8 @@ export interface Options {
   clientDir?: string;
   /** A content bundle directory other than the fixture. */
   contentDir?: string;
+  /** Result counters to share between API instances or seed with other players' games; fresh in-memory ones by default. */
+  resultCounters?: ResultCounters;
 }
 
 /** A writable copy of the fixture content bundle. */
@@ -33,6 +35,7 @@ export async function startApi({
   signingKey = testSigningKey,
   clientDir,
   contentDir = fixtureDir,
+  resultCounters = memoryResultCounters(),
 }: Options) {
   return buildApp({
     clock: () => new Date(typeof now === 'function' ? now() : now),
@@ -40,6 +43,7 @@ export async function startApi({
     content: await loadContent(contentDir),
     signingKey,
     clientDir,
+    resultCounters,
   });
 }
 
@@ -48,6 +52,31 @@ export async function startGame(options: Options) {
   const api = await startApi(options);
   const response = await api.inject({ method: 'POST', url: '/api/game', payload: {} });
   return { api, response };
+}
+
+type Api = Awaited<ReturnType<typeof startApi>>;
+
+/** Resume a game from a Play Token the way the client does after a reload. */
+export function resumeGame(api: Api, playToken: string) {
+  return api.inject({ method: 'POST', url: '/api/game', payload: { playToken } });
+}
+
+/** Submit a Guess with a Play Token, returning the raw response. */
+export function submitGuess(api: Api, playToken: string, guess: string) {
+  return api.inject({ method: 'POST', url: '/api/guess', payload: { playToken, guess } });
+}
+
+/** Submit Guesses one after another, each with the Play Token the previous one returned. */
+export async function playGuesses(api: Api, playToken: string, guesses: string[]): Promise<GameResponse[]> {
+  const games: GameResponse[] = [];
+  for (const guess of guesses) {
+    const response = await submitGuess(api, playToken, guess);
+    if (response.statusCode !== 200) throw new Error(`Guess "${guess}": status ${response.statusCode}: ${response.body}`);
+    const game = response.json<GameResponse>();
+    games.push(game);
+    playToken = game.playToken;
+  }
+  return games;
 }
 
 export async function puzzleNumberAt(now: string, launchDate?: string): Promise<number> {
