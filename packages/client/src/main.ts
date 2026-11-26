@@ -133,9 +133,17 @@ guessForm.addEventListener('submit', async (event) => {
   }
 });
 
+// The game is shown as soon as it starts, whether or not the suggestions load.
+const vocabulary = loadGuessVocabulary(fetch);
+let started = false;
 try {
-  const [game, vocabulary] = await Promise.all([startGame(fetch, localStorage), loadGuessVocabulary(fetch)]);
-  names = vocabulary;
+  render(await startGame(fetch, localStorage));
+  started = true;
+} catch (error) {
+  showError(error);
+}
+try {
+  names = await vocabulary;
   suggestions.replaceChildren(
     ...names.map((name) => {
       const option = document.createElement('option');
@@ -143,7 +151,7 @@ try {
       return option;
     }),
   );
-  render(game);
 } catch (error) {
-  showError(error);
+  // A failed start already says why; don't replace that with this.
+  if (started) showError(error);
 }
