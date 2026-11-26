@@ -4,7 +4,7 @@ import { cp, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildApp, loadContent } from '../src/app.ts';
+import { buildApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
 
 export const fixtureDir = fileURLToPath(new URL('./fixture/', import.meta.url));
@@ -18,6 +18,8 @@ export interface Options {
   clientDir?: string;
   /** A content bundle directory other than the fixture. */
   contentDir?: string;
+  /** Result counters to share between API instances or seed with other players' games; fresh in-memory ones by default. */
+  resultCounters?: ResultCounters;
 }
 
 /** A writable copy of the fixture content bundle. */
@@ -33,6 +35,7 @@ export async function startApi({
   signingKey = testSigningKey,
   clientDir,
   contentDir = fixtureDir,
+  resultCounters = memoryResultCounters(),
 }: Options) {
   return buildApp({
     clock: () => new Date(typeof now === 'function' ? now() : now),
@@ -40,6 +43,7 @@ export async function startApi({
     content: await loadContent(contentDir),
     signingKey,
     clientDir,
+    resultCounters,
   });
 }
 

@@ -6,6 +6,7 @@ const env = {
   OBJECTLE_SIGNING_KEY: 'a-signing-key-from-the-secret-store',
   OBJECTLE_LAUNCH_DATE: '2027-03-01',
   OBJECTLE_CONTENT_DIR: '/content',
+  OBJECTLE_DATABASE_URL: 'postgres://objectle@db.example/objectle',
 };
 
 describe('Configuration', () => {
@@ -45,6 +46,15 @@ describe('Configuration', () => {
   test('refuses to start without a content directory', () => {
     const { OBJECTLE_CONTENT_DIR: _, ...rest } = env;
     expect(() => loadConfig(rest)).toThrow(/OBJECTLE_CONTENT_DIR/);
+  });
+
+  test('takes the Result counters’ Postgres connection string from the environment', () => {
+    expect(loadConfig(env).databaseUrl).toBe(env.OBJECTLE_DATABASE_URL);
+  });
+
+  test('refuses to start without a Postgres connection string, rather than keep Result counters per replica', () => {
+    const { OBJECTLE_DATABASE_URL: _, ...rest } = env;
+    expect(() => loadConfig(rest)).toThrow(/OBJECTLE_DATABASE_URL/);
   });
 
   test('listens on PORT, 8080 by default, and serves the client from OBJECTLE_CLIENT_DIR if set', () => {

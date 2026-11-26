@@ -4,6 +4,8 @@ export interface Config {
   signingKey: string;
   launchDate: string;
   contentDir: string;
+  /** Postgres connection string for the Result counters, which every replica shares. */
+  databaseUrl: string;
   clientDir: string | undefined;
   port: number;
 }
@@ -25,7 +27,12 @@ function isCalendarDate(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
-/** Read the API's configuration from the environment; the signing key is a secret, never a default. */
+/**
+ * Read the API's configuration from the environment; the signing key is a
+ * secret, never a default. OBJECTLE_DATABASE_URL (a postgres:// connection
+ * string, carrying a credential) is required: Result counters kept in memory
+ * would differ per replica.
+ */
 export function loadConfig(env: Env): Config {
   const signingKey = required(env, 'OBJECTLE_SIGNING_KEY');
   if (signingKey.length < 32) throw new Error('OBJECTLE_SIGNING_KEY must be at least 32 characters');
@@ -42,6 +49,7 @@ export function loadConfig(env: Env): Config {
     signingKey,
     launchDate,
     contentDir: required(env, 'OBJECTLE_CONTENT_DIR'),
+    databaseUrl: required(env, 'OBJECTLE_DATABASE_URL'),
     clientDir: env.OBJECTLE_CLIENT_DIR ? resolve(env.OBJECTLE_CLIENT_DIR) : undefined,
     port: Number(port),
   };

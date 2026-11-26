@@ -2,19 +2,26 @@ import { readFile } from 'node:fs/promises';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import type {
+  CreditsResponse,
+  Distribution,
+  EndOfGame,
   ErrorResponse,
   GameRequest,
   GameResponse,
   GuessRequest,
   GuessVocabularyResponse,
+  ModelCredit,
   Result,
 } from '@objectle/shared';
 import { revealStageCount, type Content } from './content.ts';
 import { signPlayToken, verifyPlayToken, type Progress } from './play-token.ts';
 import { puzzleNumberAt } from './puzzle-clock.ts';
+import type { ResultCounters } from './result-counters.ts';
 
 export { loadContent } from './content.ts';
 export type { Content } from './content.ts';
+export { memoryResultCounters } from './result-counters.ts';
+export type { ResultCounters } from './result-counters.ts';
 
 export interface Dependencies {
   clock: () => Date;
@@ -22,6 +29,7 @@ export interface Dependencies {
   launchDate: string;
   content: Content;
   signingKey: string;
+  resultCounters: ResultCounters;
   /** The built client, served from the same origin; omitted in API-only tests. */
   clientDir?: string;
   logger?: boolean;
@@ -29,13 +37,41 @@ export interface Dependencies {
 
 const invalidPlayToken: ErrorResponse = { error: 'The Play Token is not valid.' };
 
-export function buildApp({ clock, launchDate, content, signingKey, clientDir, logger = false }: Dependencies) {
+/**
+ * The Beat Percentage of a game that ended with a Result, from the
+ * Distribution that already counts it: other games with a worse Result, plus
+ * half of those with the same one, over all other games; null when there are
+ * none. Results are ranked solved at Reveal Stage 1 best, through 6, then failed.
+ */
+function beatPercentage({ solved, failed }: Distribution, result: Result): number | null {
+  const ranked = [...solved, failed];
+  const own = result.solved ? result.revealStage - 1 : ranked.length - 1;
+  // Never below zero, should the counters have missed the player's own game.
+  const others = ranked.map((count, rank) => (rank === own ? Math.max(0, count - 1) : count));
+  const total = others.reduce((sum, count) => sum + count, 0);
+  if (total === 0) return null;
+  const worse = others.slice(own + 1).reduce((sum, count) => sum + count, 0);
+  return (100 * (worse + others[own] / 2)) / total;
+}
+
+export function buildApp({
+  clock,
+  launchDate,
+  content,
+  signingKey,
+  resultCounters,
+  clientDir,
+  logger = false,
+}: Dependencies) {
   const app = Fastify({ logger });
   if (clientDir) app.register(fastifyStatic, { root: clientDir });
 
   const vocabulary = new Set(content.bundle.guessVocabulary.map(({ name }) => name));
   // Sorted, so the order says nothing about which nouns are in the Answer Pool.
   const guessVocabulary: GuessVocabularyResponse = { names: [...vocabulary].sort() };
+  const creditByName = new Map(content.bundle.guessVocabulary.map(({ name, credit }) => [name, credit]));
+  const modelCredit = (name: string): ModelCredit => ({ name, credit: creditByName.get(name)! });
+  const credits: CreditsResponse = { credits: [...vocabulary].sort().map(modelCredit) };
 
   /** The active Puzzle Number, or why no game can be played right now. */
   const active = (): { puzzleNumber: number } | { status: number; body: ErrorResponse } => {
@@ -55,7 +91,18 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
     return { revealStage: guesses.length + 1, result: null };
   };
 
-  const position = (progress: Progress): GameResponse => {
+  const endOfGame = async ({ puzzleNumber, guesses }: Progress, result: Result): Promise<EndOfGame> => {
+    const dailyObject = content.dailyObject(puzzleNumber)!;
+    const distribution = await resultCounters.distribution(puzzleNumber);
+    return {
+      dailyObject: modelCredit(dailyObject),
+      ghostCredits: guesses.filter((guess) => guess !== dailyObject).map(modelCredit),
+      distribution,
+      beatPercentage: beatPercentage(distribution, result),
+    };
+  };
+
+  const position = async (progress: Progress): Promise<GameResponse> => {
     const { revealStage, result } = play(progress);
     const assets = content.revealStages(progress.puzzleNumber)![revealStage - 1];
     return {
@@ -65,12 +112,15 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
       stageAssets: assets.map(({ id }) => ({ url: `/api/stage-assets/${id}` })),
       guesses: progress.guesses,
       result,
+      endOfGame: result && (await endOfGame(progress, result)),
     };
   };
 
   const freshGame = (puzzleNumber: number) => position({ puzzleNumber, guesses: [] });
 
   app.get('/api/guess-vocabulary', async () => guessVocabulary);
+
+  app.get('/api/credits', async () => credits);
 
   // Start or resume. A Play Token for any other Puzzle Number gets a fresh game.
   app.post<{ Body: GameRequest | null }>('/api/game', async (request, reply) => {
@@ -102,7 +152,12 @@ export function buildApp({ clock, launchDate, content, signingKey, clientDir, lo
     if (progress.guesses.includes(guess)) {
       return reply.code(422).send({ error: `You already guessed ${guess}; it does not count again.` });
     }
-    return position({ puzzleNumber: progress.puzzleNumber, guesses: [...progress.guesses, guess] });
+    const next = { puzzleNumber: progress.puzzleNumber, guesses: [...progress.guesses, guess] };
+    // The only place a game ends, so each finished game is counted once.
+    // Replaying an older Play Token to finish again counts twice (ADR-0001).
+    const { result } = play(next);
+    if (result) await resultCounters.increment(next.puzzleNumber, result);
+    return position(next);
   });
 
   // Asset ids are content hashes, so a later Reveal Stage's asset cannot be
