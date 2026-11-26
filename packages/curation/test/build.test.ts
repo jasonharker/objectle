@@ -17,6 +17,7 @@ type Json = any;
 interface ContentInput {
   guessVocabulary: Json[];
   answerPool: Json[];
+  pins: Json[];
   schedule: Json[];
 }
 
@@ -53,12 +54,20 @@ function validContent(): ContentInput {
       noun('wooden spoon', { size: 0.3, primaryMaterial: 'wood' }),
     ],
     answerPool: [answerPoolEntry('teapot'), answerPoolEntry('pinecone', 'medium')],
+    pins: [],
     schedule: [
       { puzzleNumber: 1, noun: 'teapot', pinned: false },
-      { puzzleNumber: 2, noun: 'pinecone', pinned: true },
+      { puzzleNumber: 2, noun: 'pinecone', pinned: false },
     ],
   };
 }
+
+/** An Answer Pool object to add to the valid content: its noun's name and Difficulty Rating. */
+type Added = [name: string, difficultyRating: string];
+
+/** `count` Answer Pool objects named `${prefix} 1`, `${prefix} 2`…, all with one Difficulty Rating. */
+const objects = (prefix: string, count: number, difficultyRating: string): Added[] =>
+  Array.from({ length: count }, (_, i) => [`${prefix} ${i + 1}`, difficultyRating]);
 
 /**
  * File bytes in the format a path's extension names, distinct per path: a
@@ -92,12 +101,17 @@ function fileBytes(path: string): Buffer {
 
 /**
  * Write a content directory: the curation input files plus a distinct model
- * and stage asset file for every path the valid content names. `edit` changes
+ * and stage asset file for every path the valid content names. `added`
+ * Answer Pool objects join the valid content, files included. `edit` changes
  * the JSON after the files are written, so it can point at missing files.
  */
-async function contentDir(edit: (content: ContentInput) => void = () => {}): Promise<string> {
+async function contentDir(edit: (content: ContentInput) => void = () => {}, added: Added[] = []): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'objectle-curation-'));
   const content = validContent();
+  for (const [name, difficultyRating] of added) {
+    content.guessVocabulary.push(noun(name));
+    content.answerPool.push(answerPoolEntry(name, difficultyRating));
+  }
   const files = [
     ...content.guessVocabulary.map(({ model }) => model),
     ...content.answerPool.flatMap(({ revealStages }) => revealStages.flatMap(({ assets }: Json) => assets)),
@@ -109,9 +123,27 @@ async function contentDir(edit: (content: ContentInput) => void = () => {}): Pro
   edit(content);
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(content.guessVocabulary));
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify(content.answerPool));
+  await writeFile(join(dir, 'pins.json'), JSON.stringify(content.pins));
   await writeFile(join(dir, 'schedule.json'), JSON.stringify(content.schedule));
   return dir;
 }
+
+/** The Launch Date every test builds with unless it says otherwise: a Monday. */
+const launchDate = '2027-03-01';
+
+/** The Pacific date of a Puzzle Number. */
+function dateOf(puzzleNumber: number): string {
+  const date = new Date(`${launchDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + puzzleNumber - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+/** An instant during a Puzzle Number: noon Pacific on its date. */
+const during = (puzzleNumber: number) => `${dateOf(puzzleNumber)}T12:00:00-08:00`;
+
+/** The Difficulty Pattern: the rating each Pacific weekday aims for, Sunday first. */
+const difficultyPattern = ['medium', 'easy', 'easy', 'medium', 'medium', 'hard', 'hard'];
+const aimFor = (puzzleNumber: number) => difficultyPattern[new Date(`${dateOf(puzzleNumber)}T00:00:00Z`).getUTCDay()];
 
 interface Run {
   status: number;
@@ -120,12 +152,20 @@ interface Run {
   bundleDir: string;
 }
 
-/** Run the curation build's command-line tool on a content directory. */
-async function curate(dir: string, bundleDir?: string): Promise<Run> {
+interface CurateOptions {
+  bundleDir?: string;
+  /** The injected clock: the instant the build runs at. Puzzle Number 1 by default. */
+  now?: string;
+  seed?: string;
+}
+
+/** Run the curation build's command-line tool on a content directory; the real clock is never read. */
+async function curate(dir: string, { bundleDir, now = during(1), seed }: CurateOptions = {}): Promise<Run> {
   bundleDir ??= join(await mkdtemp(join(tmpdir(), 'objectle-bundle-')), 'bundle');
   const out = bundleDir;
+  const args = ['--launch-date', launchDate, '--now', now, ...(seed === undefined ? [] : ['--seed', seed])];
   return new Promise((resolve) => {
-    execFile(process.execPath, [cli, dir, out], (error, stdout, stderr) => {
+    execFile(process.execPath, [cli, ...args, dir, out], (error, stdout, stderr) => {
       resolve({ status: error ? Number(error.code) : 0, stdout, stderr, bundleDir: out });
     });
   });
@@ -143,8 +183,8 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /** Build edited content, expecting failure; returns the listed problems. */
-async function problems(edit: (content: ContentInput) => void): Promise<string> {
-  const run = await curate(await contentDir(edit));
+async function problems(edit: (content: ContentInput) => void, options: CurateOptions = {}): Promise<string> {
+  const run = await curate(await contentDir(edit), options);
   expect(run.status, run.stderr).toBe(1);
   expect(await exists(join(run.bundleDir, 'bundle.json'))).toBe(false);
   return run.stderr;
@@ -243,7 +283,7 @@ describe.concurrent('A valid content directory', () => {
   test('refuses to write into a bundle directory that is not empty', async () => {
     const bundleDir = await mkdtemp(join(tmpdir(), 'objectle-bundle-'));
     await writeFile(join(bundleDir, 'stale.glb'), 'left from an earlier build');
-    const run = await curate(await contentDir(), bundleDir);
+    const run = await curate(await contentDir(), { bundleDir });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain(bundleDir);
     expect(await exists(join(bundleDir, 'bundle.json'))).toBe(false);
@@ -425,11 +465,58 @@ describe.concurrent('A Reveal Stage asset (ADR-0006)', () => {
   });
 });
 
-describe.concurrent('The Schedule', () => {
-  test('naming a noun outside the Answer Pool fails, naming the Puzzle Number and the noun', async () => {
-    expect(
-      await problems((content) => content.schedule.push({ puzzleNumber: 3, noun: 'wooden spoon', pinned: false })),
-    ).toMatch(/Puzzle Number 3 is scheduled to "wooden spoon", which is not in the Answer Pool/);
+/** Copy a bundle's Schedule back into a content directory, as publishing it does. */
+async function publish(run: Run, dir: string): Promise<ContentBundle['schedule']> {
+  expect(run.status, run.stderr).toBe(0);
+  const { schedule } = await readBundle(run.bundleDir);
+  await writeFile(join(dir, 'schedule.json'), JSON.stringify(schedule));
+  return schedule;
+}
+
+const scheduledOn = (schedule: ContentBundle['schedule'], puzzleNumber: number) =>
+  schedule.find((entry) => entry.puzzleNumber === puzzleNumber);
+
+/** Enough Answer Pool objects to fill the Planning Horizon on the Difficulty Pattern alone. */
+const plenty = [
+  ...objects('easy object', 30, 'easy'),
+  ...objects('medium object', 45, 'medium'),
+  ...objects('hard object', 30, 'hard'),
+];
+const ratingOf = new Map<string, string>([['teapot', 'easy'], ['pinecone', 'medium'], ...plenty]);
+
+describe.concurrent('The previously published Schedule', () => {
+  test('naming a noun outside the Answer Pool on the active Puzzle Number fails, naming both', async () => {
+    expect(await problems((content) => (content.schedule[0].noun = 'wooden spoon'))).toMatch(
+      /Puzzle Number 1 is active and scheduled to "wooden spoon", which is not in the Answer Pool/,
+    );
+  });
+
+  test('keeps a past Puzzle Number whose noun has left the Answer Pool', async () => {
+    const run = await curate(
+      await contentDir((content) => content.schedule.push({ puzzleNumber: 3, noun: 'wooden spoon', pinned: false })),
+      { now: during(4) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 3)).toEqual({
+      puzzleNumber: 3,
+      noun: 'wooden spoon',
+      pinned: false,
+    });
+  });
+
+  test('refills a future Puzzle Number whose noun has left the Answer Pool', async () => {
+    const run = await curate(
+      await contentDir(
+        (content) => content.schedule.push({ puzzleNumber: 3, noun: 'wooden spoon', pinned: false }),
+        [['teacup', 'medium']],
+      ),
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 3)).toEqual({
+      puzzleNumber: 3,
+      noun: 'teacup',
+      pinned: false,
+    });
   });
 
   test('assigning a Puzzle Number twice fails, naming the Puzzle Number', async () => {
@@ -443,10 +530,299 @@ describe.concurrent('The Schedule', () => {
       await problems((content) => content.schedule.push({ puzzleNumber, noun: 'teapot', pinned: false })),
     ).toMatch(/Schedule entry 3 has Puzzle Number/);
   });
+
+  test('keeps every assignment a later build has no reason to change, and extends it to the Planning Horizon', async () => {
+    const dir = await contentDir(() => {}, plenty);
+    const first = await publish(await curate(dir), dir);
+    const run = await curate(dir, { now: during(5) });
+    expect(run.status, run.stderr).toBe(0);
+    const second = (await readBundle(run.bundleDir)).schedule;
+    expect(second.slice(0, first.length)).toEqual(first);
+    expect(second.map(({ puzzleNumber }) => puzzleNumber)).toEqual(Array.from({ length: 95 }, (_, i) => i + 1));
+  });
+
+  test('refills only the days that a removed object or a new Pin forces', async () => {
+    const dir = await contentDir(() => {}, plenty);
+    const first = await publish(await curate(dir), dir);
+    const removed = scheduledOn(first, 20)!.noun;
+    const pinned = scheduledOn(first, 30)!.noun;
+    const answerPool: Json[] = JSON.parse(await readFile(join(dir, 'answer-pool.json'), 'utf8'));
+    await writeFile(join(dir, 'answer-pool.json'), JSON.stringify(answerPool.filter((entry) => entry.noun !== removed)));
+    await writeFile(join(dir, 'pins.json'), JSON.stringify([{ date: dateOf(60), noun: pinned }]));
+
+    const run = await curate(dir, { now: during(3) });
+    expect(run.status, run.stderr).toBe(0);
+    const second = (await readBundle(run.bundleDir)).schedule;
+    expect(scheduledOn(second, 20)!.noun).not.toBe(removed);
+    expect(scheduledOn(second, 30)!.noun).not.toBe(pinned);
+    expect(scheduledOn(second, 60)).toEqual({ puzzleNumber: 60, noun: pinned, pinned: true });
+    for (const entry of first.filter(({ puzzleNumber }) => ![20, 30, 60].includes(puzzleNumber))) {
+      expect(scheduledOn(second, entry.puzzleNumber)).toEqual(entry);
+    }
+    expect(second.filter(({ noun }) => noun === removed || noun === pinned)).toEqual([
+      { puzzleNumber: 60, noun: pinned, pinned: true },
+    ]);
+  });
+
+  test('refills a future day whose Pin was removed', async () => {
+    const run = await curate(await contentDir((content) => (content.schedule[1].pinned = true), [['teacup', 'medium']]));
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)!.pinned).toBe(false);
+  });
+});
+
+describe.concurrent('A Pin', () => {
+  test('keeps its date and is recorded as a Pin', async () => {
+    const run = await curate(
+      await contentDir((content) => content.pins.push({ date: dateOf(40), noun: 'teacup' }), [['teacup', 'hard']]),
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 40)).toEqual({
+      puzzleNumber: 40,
+      noun: 'teacup',
+      pinned: true,
+    });
+  });
+
+  test('keeps its object through regenerations', async () => {
+    const dir = await contentDir((content) => content.pins.push({ date: dateOf(40), noun: 'easy object 1' }), plenty);
+    await publish(await curate(dir), dir);
+    await publish(await curate(dir, { now: during(10) }), dir);
+    const run = await curate(dir, { now: during(39), seed: 'another seed' });
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 40)).toEqual({
+      puzzleNumber: 40,
+      noun: 'easy object 1',
+      pinned: true,
+    });
+  });
+
+  test('takes its date from an earlier assignment', async () => {
+    const dir = await contentDir(() => {}, plenty);
+    const first = await publish(await curate(dir), dir);
+    const other = scheduledOn(first, 41)!.noun;
+    await writeFile(join(dir, 'pins.json'), JSON.stringify([{ date: dateOf(40), noun: other }]));
+    const run = await curate(dir);
+    expect(run.status, run.stderr).toBe(0);
+    const second = (await readBundle(run.bundleDir)).schedule;
+    expect(scheduledOn(second, 40)).toEqual({ puzzleNumber: 40, noun: other, pinned: true });
+    expect(scheduledOn(second, 41)!.noun).not.toBe(other);
+  });
+
+  test('keeps its object out of generated days within the Repeat Gap on either side', async () => {
+    const run = await curate(
+      await contentDir(
+        (content) => content.pins.push({ date: dateOf(30), noun: 'teacup' }),
+        [
+          ['teacup', 'medium'],
+          ['saucer', 'medium'],
+          ['milk jug', 'medium'],
+        ],
+      ),
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect(schedule.filter(({ noun }) => noun === 'teacup')).toEqual([{ puzzleNumber: 30, noun: 'teacup', pinned: true }]);
+    expect(schedule.map(({ noun }) => noun)).toEqual(expect.arrayContaining(['saucer', 'milk jug']));
+  });
+
+  test('may fall inside its object’s Repeat Gap', async () => {
+    const run = await curate(await contentDir((content) => content.pins.push({ date: dateOf(10), noun: 'teapot' })));
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 10)).toEqual({
+      puzzleNumber: 10,
+      noun: 'teapot',
+      pinned: true,
+    });
+  });
+
+  test('to a noun outside the Answer Pool fails, naming the date and the noun', async () => {
+    expect(await problems((content) => content.pins.push({ date: dateOf(10), noun: 'wooden spoon' }))).toContain(
+      `Pin on ${dateOf(10)} is to "wooden spoon", which is not in the Answer Pool`,
+    );
+  });
+
+  test('on a past date fails, naming the date', async () => {
+    expect(
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(3) }),
+    ).toContain(`Pin on ${dateOf(2)} is on a past date`);
+  });
+
+  test('on the active date fails, naming the date', async () => {
+    expect(
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(2) }),
+    ).toContain(`Pin on ${dateOf(2)} is on the active date`);
+  });
+
+  test('before the Launch Date fails, naming the date', async () => {
+    expect(
+      await problems((content) => content.pins.push({ date: '2027-02-28', noun: 'pinecone' }), {
+        now: '2027-02-01T12:00:00-08:00',
+      }),
+    ).toContain('Pin on 2027-02-28 is before the Launch Date');
+  });
+
+  test('dates turn over at midnight Pacific, not UTC', async () => {
+    const dir = await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }));
+    // 23:59 Pacific on the Launch Date, already the next day in UTC.
+    expect((await curate(dir, { now: `${dateOf(2)}T07:59:00Z` })).status).toBe(0);
+    expect((await curate(dir, { now: `${dateOf(2)}T08:00:00Z` })).status).toBe(1);
+  });
+
+  test('sharing its date with another Pin fails, naming the date', async () => {
+    expect(
+      await problems((content) =>
+        content.pins.push({ date: dateOf(10), noun: 'pinecone' }, { date: dateOf(10), noun: 'teapot' }),
+      ),
+    ).toContain(`${dateOf(10)} has more than one Pin`);
+  });
+
+  test.each(['2027-02-30', '10 March 2027', 20270310])('with date %j fails', async (date) => {
+    expect(await problems((content) => content.pins.push({ date, noun: 'pinecone' }))).toContain(
+      `Pin 1 has date ${JSON.stringify(date)}, which is not a YYYY-MM-DD date`,
+    );
+  });
+
+  test('without a noun fails', async () => {
+    expect(await problems((content) => content.pins.push({ date: dateOf(10) }))).toContain(
+      `Pin on ${dateOf(10)} has no noun`,
+    );
+  });
+});
+
+describe.concurrent('Schedule generation', () => {
+  test('assigns every Puzzle Number through the Planning Horizon, 90 past the active one', async () => {
+    const run = await curate(await contentDir(() => {}, plenty), { now: during(10) });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout).not.toMatch(/shortfall|aims for/i);
+    const assigned = (await readBundle(run.bundleDir)).schedule.map(({ puzzleNumber }) => puzzleNumber);
+    expect(assigned).toEqual([1, 2, ...Array.from({ length: 91 }, (_, i) => i + 10)]);
+  });
+
+  test('before launch, assigns Puzzle Numbers 1 to 91', async () => {
+    const run = await curate(await contentDir((content) => (content.schedule = []), plenty), {
+      now: '2027-01-15T12:00:00-08:00',
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const assigned = (await readBundle(run.bundleDir)).schedule.map(({ puzzleNumber }) => puzzleNumber);
+    expect(assigned).toEqual(Array.from({ length: 91 }, (_, i) => i + 1));
+  });
+
+  test('follows the Difficulty Pattern when the Answer Pool allows', async () => {
+    const run = await curate(await contentDir(() => {}, plenty));
+    const generated = (await readBundle(run.bundleDir)).schedule.filter(({ puzzleNumber }) => puzzleNumber > 2);
+    expect(generated).toHaveLength(89);
+    for (const { puzzleNumber, noun } of generated) {
+      expect(ratingOf.get(noun), `Puzzle Number ${puzzleNumber}`).toBe(aimFor(puzzleNumber));
+    }
+  });
+
+  test('never repeats an object within the Repeat Gap', async () => {
+    // A year on from a full Schedule, only objects last seen 365 or more
+    // Puzzle Numbers earlier, or never, are eligible.
+    const dir = await contentDir(() => {}, plenty);
+    await publish(await curate(dir), dir);
+    const run = await curate(dir, { now: during(380) });
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect(schedule.filter(({ puzzleNumber }) => puzzleNumber >= 380).length).toBeGreaterThan(20);
+    const last = new Map<string, number>();
+    for (const { puzzleNumber, noun } of schedule) {
+      if (last.has(noun)) expect(puzzleNumber - last.get(noun)!, noun).toBeGreaterThanOrEqual(365);
+      last.set(noun, puzzleNumber);
+    }
+  });
+
+  test('makes an object eligible again exactly 365 Puzzle Numbers after its last appearance', async () => {
+    const dir = await contentDir((content) => {
+      content.answerPool = content.answerPool.filter(({ noun }) => noun !== 'pinecone');
+      content.schedule = [{ puzzleNumber: 100, noun: 'teapot', pinned: false }];
+    });
+    const [early, due] = await Promise.all([curate(dir, { now: during(464) }), curate(dir, { now: during(465) })]);
+    expect((await readBundle(early.bundleDir)).schedule).toEqual([{ puzzleNumber: 100, noun: 'teapot', pinned: false }]);
+    expect(scheduledOn((await readBundle(due.bundleDir)).schedule, 465)).toEqual({
+      puzzleNumber: 465,
+      noun: 'teapot',
+      pinned: false,
+    });
+  });
+
+  test('picks the eligible object whose last appearance is oldest, never-appeared first', async () => {
+    const run = await curate(
+      await contentDir(
+        (content) => {
+          content.answerPool = content.answerPool.filter(({ noun }) => noun !== 'teapot' && noun !== 'pinecone');
+          content.schedule = [
+            { puzzleNumber: 100, noun: 'a', pinned: false },
+            { puzzleNumber: 130, noun: 'd', pinned: false },
+            { puzzleNumber: 138, noun: 'b', pinned: false },
+          ];
+        },
+        [
+          ['a', 'medium'],
+          ['b', 'medium'],
+          ['c', 'medium'],
+          ['d', 'medium'],
+        ],
+      ),
+      { now: during(500) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const generated = (await readBundle(run.bundleDir)).schedule.filter(({ puzzleNumber }) => puzzleNumber >= 500);
+    expect(generated.map(({ puzzleNumber, noun }) => [puzzleNumber, noun])).toEqual([
+      [500, 'c'],
+      [501, 'a'],
+      [502, 'd'],
+      [503, 'b'],
+    ]);
+  });
+
+  test.each([
+    ['easy', 8, ['medium', 'hard']],
+    ['hard', 5, ['medium', 'easy']],
+    ['medium', 3, ['easy', 'hard']],
+  ])('on a day aiming for %s with none eligible, falls back in order and reports it', async (aim, puzzleNumber, fallbacks) => {
+    const run = await curate(
+      await contentDir(
+        () => {},
+        fallbacks.map((rating): Added => [`${rating} object`, rating]),
+      ),
+      { now: during(puzzleNumber) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect([aimFor(puzzleNumber), aimFor(puzzleNumber + 1)]).toEqual([aim, aim]);
+    expect(scheduledOn(schedule, puzzleNumber)!.noun).toBe(`${fallbacks[0]} object`);
+    expect(scheduledOn(schedule, puzzleNumber + 1)!.noun).toBe(`${fallbacks[1]} object`);
+    for (const [day, fallback] of [puzzleNumber, puzzleNumber + 1].map((day, i) => [day, fallbacks[i]])) {
+      expect(run.stdout).toMatch(new RegExp(`Puzzle Number ${day} \\(\\w+day\\) aims for ${aim} but takes ${fallback}`));
+    }
+  });
+
+  test('stops where no object is eligible and still passes, reporting the last Puzzle Number covered and the days short', async () => {
+    const run = await curate(await contentDir(() => {}, [['teacup', 'medium']]));
+    expect(run.status, run.stderr).toBe(0);
+    expect((await readBundle(run.bundleDir)).schedule.map(({ puzzleNumber }) => puzzleNumber)).toEqual([1, 2, 3]);
+    expect(run.stdout).toContain(
+      'assigned through Puzzle Number 3, 88 days short of the Planning Horizon (Puzzle Number 91)',
+    );
+  });
+
+  test('produces the same Schedule from the same input', async () => {
+    const dir = await contentDir(() => {}, plenty);
+    const [one, two] = await Promise.all([curate(dir, { seed: 's' }), curate(dir, { seed: 's' })]);
+    expect((await readBundle(one.bundleDir)).schedule).toEqual((await readBundle(two.bundleDir)).schedule);
+  });
+
+  test('breaks ties by the seed', async () => {
+    const dir = await contentDir(() => {}, plenty);
+    const [one, two] = await Promise.all([curate(dir, { seed: 'one' }), curate(dir, { seed: 'two' })]);
+    expect((await readBundle(one.bundleDir)).schedule).not.toEqual((await readBundle(two.bundleDir)).schedule);
+  });
 });
 
 describe.concurrent('Content input files', () => {
-  const inputFiles = ['guess-vocabulary.json', 'answer-pool.json', 'schedule.json'];
+  const inputFiles = ['guess-vocabulary.json', 'answer-pool.json', 'pins.json', 'schedule.json'];
 
   test.each(inputFiles)('a missing %s fails, naming the file', async (file) => {
     const dir = await contentDir();

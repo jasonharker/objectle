@@ -54,9 +54,14 @@ async function indexAsset(dir: string, path: string): Promise<StageAsset> {
 /**
  * Load a content bundle directory: bundle.json plus an index of every stage
  * asset it names. Throws, listing every problem, on a bundle the API could
- * not serve; the curation build's checks are the full ones.
+ * not serve; the curation build's checks are the full ones. A Schedule entry
+ * before `activePuzzleNumber` is never served, so it may name a noun that has
+ * left the Answer Pool (ADR-0007).
  */
-export async function loadContent(dir: string): Promise<Content> {
+export async function loadContent(
+  dir: string,
+  { activePuzzleNumber = -Infinity }: { activePuzzleNumber?: number } = {},
+): Promise<Content> {
   const bundle: ContentBundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
 
   const problems: string[] = [];
@@ -104,7 +109,7 @@ export async function loadContent(dir: string): Promise<Content> {
     }
   }
   for (const { puzzleNumber, noun } of bundle.schedule) {
-    if (!stagesByNoun.has(noun)) {
+    if (puzzleNumber >= activePuzzleNumber && !stagesByNoun.has(noun)) {
       problems.push(`Puzzle Number ${puzzleNumber} is scheduled to "${noun}", which is not in the Answer Pool`);
     }
   }

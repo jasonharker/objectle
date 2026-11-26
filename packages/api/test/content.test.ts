@@ -27,6 +27,15 @@ test('refuses a Schedule entry whose noun is not in the Answer Pool', async () =
   await expect(loadContent(dir)).rejects.toThrow(/Puzzle Number 4.*wooden spoon.*Answer Pool/);
 });
 
+test('loads a past Schedule entry whose noun has left the Answer Pool, but not an active one', async () => {
+  // A past Puzzle Number is never reassigned, so it may name a noun that has since left (ADR-0007).
+  const dir = await editedFixture((bundle) => {
+    bundle.schedule.push({ puzzleNumber: 4, noun: 'wooden spoon', pinned: false });
+  });
+  await expect(loadContent(dir, { activePuzzleNumber: 5 })).resolves.toBeDefined();
+  await expect(loadContent(dir, { activePuzzleNumber: 4 })).rejects.toThrow(/Puzzle Number 4.*wooden spoon/);
+});
+
 test('refuses an Answer Pool entry without Reveal Stages', async () => {
   const dir = await editedFixture((bundle) => {
     bundle.answerPool[1].revealStages = [];

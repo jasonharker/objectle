@@ -1,13 +1,16 @@
 import { buildApp, loadContent } from './app.ts';
 import { loadConfig } from './config.ts';
 import { postgresResultCounters } from './postgres-result-counters.ts';
+import { puzzleNumberAt } from './puzzle-clock.ts';
 
 const config = loadConfig(process.env);
 const resultCounters = await postgresResultCounters(config.databaseUrl);
 const app = buildApp({
   clock: () => new Date(),
   launchDate: config.launchDate,
-  content: await loadContent(config.contentDir),
+  content: await loadContent(config.contentDir, {
+    activePuzzleNumber: puzzleNumberAt(new Date(), config.launchDate),
+  }),
   signingKey: config.signingKey,
   resultCounters,
   clientDir: config.clientDir,
