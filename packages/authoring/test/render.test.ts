@@ -160,6 +160,19 @@ describe.skipIf(chromiumPath() === undefined)('rendering recorded Stage Cameras 
     expect(seen.stderr).toContain('"tea caddy" Reveal Stage 1 Stage Camera frames marked text');
   });
 
+  test('lists a model that fails to load as its object’s problem and still renders the other objects', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'models/kettle.glb'), 'not a model');
+    await writeFile(join(dir, 'answer-pool.json'), JSON.stringify([{ ...answerPoolEntry(), noun: 'kettle' }, answerPoolEntry()]));
+    const rendered = await run(authoringCli, ['render', dir]);
+    expect(rendered.code).toBe(1);
+    expect(rendered.stderr).toMatch(/^Answer Pool object "kettle" .+/m);
+    expect(rendered.stderr).not.toContain('rendering failed');
+    const [kettle, teaCaddy] = await readJson(dir, 'answer-pool.json');
+    expect(kettle.revealStages[0].assets).toBeUndefined();
+    expect(teaCaddy.revealStages).toHaveLength(6);
+  });
+
   test('renders only the nouns named, if any', async () => {
     const dir = await contentDir();
     const rendered = await run(authoringCli, ['render', dir, 'kettle']);
