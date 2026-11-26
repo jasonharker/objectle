@@ -4,11 +4,18 @@
 // means changing this module and the API's media type for it.
 import type { Object3D } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { normalizeModel } from '@objectle/shared/shader';
 
-/** Fetch and parse a model, at the scale its file is authored in. */
+/** The media type the API serves a model file as. */
+export const modelMediaType = 'model/gltf-binary';
+
+/**
+ * Fetch and parse a model, at the scale its file is authored in, already
+ * drawn through the normalization shader.
+ */
 export async function loadModel(fetchFn: typeof fetch, url: string): Promise<Object3D> {
   const response = await fetchFn(url);
   if (!response.ok) throw new Error(`The model at ${url} could not be loaded (${response.status}).`);
   const gltf = await new GLTFLoader().parseAsync(await response.arrayBuffer(), '');
-  return gltf.scene;
+  return normalizeModel(gltf.scene);
 }

@@ -10,7 +10,14 @@ function sourceModel() {
   const map = new THREE.DataTexture(new Uint8Array([200, 120, 40, 255]), 1, 1);
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0x336699, map, lightMap: baked, aoMap: baked, emissive: 0x222222 }),
+    new THREE.MeshStandardMaterial({
+      color: 0x336699,
+      map,
+      lightMap: baked,
+      aoMap: baked,
+      emissive: 0x222222,
+      vertexColors: true,
+    }),
   );
   const lens = new THREE.Mesh(new THREE.SphereGeometry(), [
     new THREE.MeshBasicMaterial({ color: 0x050505 }),
@@ -55,6 +62,16 @@ test('keeps the base colour and colour map of each source material', () => {
   expect(darkLens.uniforms.map.value).toBeNull();
 });
 
+test('normalizing an already normalized model changes nothing', () => {
+  const { model, body } = sourceModel();
+  normalizeModel(model);
+  const once = body.material;
+
+  normalizeModel(model);
+
+  expect(body.material).toBe(once);
+});
+
 test('discards lighting baked into the source and ignores scene lights', () => {
   const { model, body } = sourceModel();
 
@@ -62,6 +79,7 @@ test('discards lighting baked into the source and ignores scene lights', () => {
 
   const material = body.material as unknown as THREE.ShaderMaterial;
   expect(material.lights).toBe(false);
+  expect(material.vertexColors).toBe(false);
   for (const baked of ['lightMap', 'aoMap', 'emissive', 'emissiveMap']) {
     expect(material.uniforms).not.toHaveProperty(baked);
   }

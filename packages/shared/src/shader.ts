@@ -169,15 +169,19 @@ void main() {
 }
 `;
 
+const materialName = 'objectle-normalization';
+
 /**
  * The normalization material for one source material: it keeps only the
  * base colour and colour map; everything else, including baked lighting
- * (light, AO and emissive maps), is discarded.
+ * (light, AO and emissive maps and vertex colours), is discarded. A material
+ * that is already one is kept, so normalizing twice changes nothing.
  */
 function normalizationMaterial(source: Material): ShaderMaterial {
+  if (source instanceof ShaderMaterial && source.name === materialName) return source;
   const { color, map } = source as Partial<MeshStandardMaterial>;
   return new ShaderMaterial({
-    name: 'objectle-normalization',
+    name: materialName,
     side: source.side,
     defines: map ? { USE_BASE_MAP: '' } : {},
     uniforms: {
