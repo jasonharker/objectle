@@ -57,6 +57,15 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 const isMissing = (value: unknown) => value === undefined || value === null;
 const oneOf = <T extends string>(set: readonly T[], value: unknown): value is T => set.includes(value as T);
 
+/**
+ * Whether a Reveal Stage image (already a simple lossless WebP) has any pixel
+ * that is not opaque, where the client's backdrop would show (ADR-0006). Read
+ * from the VP8L header's alpha_is_used bit, after the 14-bit width and height,
+ * which the encoder (libwebp, behind Chromium's canvas) sets exactly when one
+ * does; decoding every stage-1 image would only repeat its answer.
+ */
+const showsBackground = (webp: Buffer) => ((webp.readUInt32LE(21) >>> 28) & 1) === 1;
+
 /** Whether a path names a file inside the content directory, so it lands inside the bundle directory too. */
 export function staysInside(path: string): boolean {
   const normalized = normalize(path);
@@ -225,8 +234,14 @@ export async function buildContent(
         for (const asset of assets) {
           const bytes = await check(asset, 'asset', stageLabel);
           if (bytes === undefined) continue;
-          for (const problem of stageAssetProblems(stageIndex + 1, bytes)) {
+          const formatProblems = stageAssetProblems(stageIndex + 1, bytes);
+          for (const problem of formatProblems) {
             problems.push(`${stageLabel} has asset ${asset as string}, which ${problem}`);
+          }
+          if (stageIndex === 0 && formatProblems.length === 0 && showsBackground(bytes)) {
+            problems.push(
+              `${stageLabel} has asset ${asset as string}, which shows background, so its Stage Camera frames the outline ahead of Reveal Stage 2`,
+            );
           }
           const hash = createHash('sha256').update(bytes).digest('hex');
           const model = modelsByHash.get(hash);

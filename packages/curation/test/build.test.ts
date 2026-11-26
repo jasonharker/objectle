@@ -446,6 +446,20 @@ describe.concurrent('A Reveal Stage asset (ADR-0006)', () => {
     expect(run.stderr).toMatch(/"teapot" Reveal Stage 2 .*assets\/teapot-stage-2\.webp, which is not a WebP image/);
   });
 
+  test('with transparent pixels fails at Reveal Stage 1, whose crop may show no background, and passes at Reveal Stage 3', async () => {
+    const dir = await contentDir();
+    for (const stage of [1, 3]) {
+      const path = `assets/teapot-stage-${stage}.webp`;
+      const withAlpha = fileBytes(path);
+      withAlpha[24] |= 0x10; // the VP8L header's alpha_is_used bit, which the encoder sets when any pixel is not opaque
+      await writeFile(join(dir, path), withAlpha);
+    }
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 1 .*assets\/teapot-stage-1\.webp, which shows background/);
+    expect(run.stderr).not.toMatch(/Reveal Stage 3/);
+  });
+
   test('that carries a name at Reveal Stage 6 fails, naming the noun, stage, file and problem', async () => {
     const dir = await contentDir();
     const named = fileBytes('assets/pinecone-stage-6.glb');
