@@ -61,7 +61,7 @@ function authoredOf(entry: Json): AuthoredObject | undefined {
   return {
     noun: entry.noun,
     difficultyRating: entry.difficultyRating,
-    stageCameras,
+    stageCameras: stageCameras as AuthoredObject['stageCameras'],
     textMarks: Array.isArray(entry.textMarks) ? entry.textMarks : [],
   };
 }
