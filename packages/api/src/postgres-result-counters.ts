@@ -1,5 +1,5 @@
 import pg from 'pg';
-import type { Result } from '@objectle/shared';
+import type { Distribution, Result } from '@objectle/shared';
 import type { ResultCounters } from './result-counters.ts';
 
 // One row per (Puzzle Number, Result) that someone has finished with. Result
@@ -17,6 +17,19 @@ const createTable = `
 
 const resultKey = (result: Result) => (result.solved ? `solved-${result.revealStage}` : 'failed');
 
+interface CountRow {
+  result: string;
+  count: string;
+}
+
+function toDistribution(rows: CountRow[]): Distribution {
+  const counts = new Map(rows.map(({ result, count }) => [result, Number(count)]));
+  return {
+    solved: [1, 2, 3, 4, 5, 6].map((stage) => counts.get(`solved-${stage}`) ?? 0),
+    failed: counts.get('failed') ?? 0,
+  };
+}
+
 /** Result counters in Postgres, shared by every replica; creates its table if it is missing. */
 export async function postgresResultCounters(connectionString: string): Promise<ResultCounters & { close(): Promise<void> }> {
   const pool = new pg.Pool({ connectionString });
@@ -32,22 +45,27 @@ export async function postgresResultCounters(connectionString: string): Promise<
 
   return {
     async increment(puzzleNumber, result) {
-      await pool.query(
-        `INSERT INTO result_counters (puzzle_number, result, count) VALUES ($1, $2, 1)
-         ON CONFLICT (puzzle_number, result) DO UPDATE SET count = result_counters.count + 1`,
+      // One statement: the outer SELECT sees the table as it was before the
+      // upsert, so the counted row comes from RETURNING and the rest from the table.
+      const { rows } = await pool.query<CountRow>(
+        `WITH counted AS (
+           INSERT INTO result_counters (puzzle_number, result, count) VALUES ($1, $2, 1)
+           ON CONFLICT (puzzle_number, result) DO UPDATE SET count = result_counters.count + 1
+           RETURNING result, count
+         )
+         SELECT result, count FROM counted
+         UNION ALL
+         SELECT result, count FROM result_counters WHERE puzzle_number = $1 AND result <> $2`,
         [puzzleNumber, resultKey(result)],
       );
+      return toDistribution(rows);
     },
     async distribution(puzzleNumber) {
-      const { rows } = await pool.query<{ result: string; count: string }>(
+      const { rows } = await pool.query<CountRow>(
         'SELECT result, count FROM result_counters WHERE puzzle_number = $1',
         [puzzleNumber],
       );
-      const counts = new Map(rows.map(({ result, count }) => [result, Number(count)]));
-      return {
-        solved: [1, 2, 3, 4, 5, 6].map((stage) => counts.get(`solved-${stage}`) ?? 0),
-        failed: counts.get('failed') ?? 0,
-      };
+      return toDistribution(rows);
     },
     close: () => pool.end(),
   };

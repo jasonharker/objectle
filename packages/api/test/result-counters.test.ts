@@ -28,6 +28,17 @@ function contract(name: string, open: () => Promise<ResultCounters>) {
       expect(await counters.distribution(3)).toEqual(empty);
     });
 
+    test('an increment returns the Puzzle Number’s Distribution counting that game', async () => {
+      const counters = await open();
+      await counters.increment(1, { solved: true, revealStage: 2 });
+      await counters.increment(2, { solved: false });
+      expect(await counters.increment(1, { solved: true, revealStage: 2 })).toEqual({
+        solved: [0, 2, 0, 0, 0, 0],
+        failed: 0,
+      });
+      expect(await counters.increment(1, { solved: false })).toEqual({ solved: [0, 2, 0, 0, 0, 0], failed: 1 });
+    });
+
     test('loses no count to concurrent increments', async () => {
       const counters = await open();
       await Promise.all(Array.from({ length: 50 }, () => counters.increment(7, { solved: false })));

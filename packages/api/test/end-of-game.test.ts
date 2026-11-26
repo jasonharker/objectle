@@ -198,6 +198,20 @@ describe('Result counters', () => {
     expect(resumed.endOfGame!.distribution).toEqual({ solved: [0, 0, 1, 0, 0, 0], failed: 0 });
   });
 
+  test('the finishing Guess needs no separate Distribution read, so no failed read can make a retry count it twice', async () => {
+    const counters = memoryResultCounters();
+    const unreadable: ResultCounters = {
+      increment: (puzzleNumber, result) => counters.increment(puzzleNumber, result),
+      distribution: async () => {
+        throw new Error('the Distribution cannot be read');
+      },
+    };
+    const api = await startApi({ now: day1, resultCounters: unreadable });
+    const end = await finish(api, solvedAt(2));
+    expect(end.endOfGame!.distribution).toEqual({ solved: [0, 1, 0, 0, 0, 0], failed: 0 });
+    expect(await counters.distribution(1)).toEqual({ solved: [0, 1, 0, 0, 0, 0], failed: 0 });
+  });
+
   test('a game still being played is not counted', async () => {
     const counters = memoryResultCounters();
     const api = await startApi({ now: day1, resultCounters: counters });

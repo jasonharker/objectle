@@ -122,9 +122,14 @@ export function buildApp({
       });
   };
 
-  const endOfGame = async ({ puzzleNumber, guesses }: Progress, result: Result): Promise<EndOfGame> => {
+  /** The end-of-game payload; `counted` is the Distribution the finishing Guess's increment returned, if any. */
+  const endOfGame = async (
+    { puzzleNumber, guesses }: Progress,
+    result: Result,
+    counted?: Distribution,
+  ): Promise<EndOfGame> => {
     const dailyObject = content.dailyObject(puzzleNumber)!;
-    const distribution = await resultCounters.distribution(puzzleNumber);
+    const distribution = counted ?? (await resultCounters.distribution(puzzleNumber));
     return {
       dailyObject: modelCredit(dailyObject),
       ghostCredits: guesses.filter((guess) => guess !== dailyObject).map(modelCredit),
@@ -133,7 +138,7 @@ export function buildApp({
     };
   };
 
-  const position = async (progress: Progress): Promise<GameResponse> => {
+  const position = async (progress: Progress, counted?: Distribution): Promise<GameResponse> => {
     const { revealStage, result } = play(progress);
     const assets = content.revealStages(progress.puzzleNumber)![revealStage - 1];
     return {
@@ -144,7 +149,7 @@ export function buildApp({
       guesses: progress.guesses,
       result,
       wrongGuesses: wrongGuesses(progress),
-      endOfGame: result && (await endOfGame(progress, result)),
+      endOfGame: result && (await endOfGame(progress, result, counted)),
     };
   };
 
@@ -188,8 +193,8 @@ export function buildApp({
     // The only place a game ends, so each finished game is counted once.
     // Replaying an older Play Token to finish again counts twice (ADR-0001).
     const { result } = play(next);
-    if (result) await resultCounters.increment(next.puzzleNumber, result);
-    return position(next);
+    const counted = result ? await resultCounters.increment(next.puzzleNumber, result) : undefined;
+    return position(next, counted);
   });
 
   // Asset ids are content hashes, so a later Reveal Stage's asset cannot be
