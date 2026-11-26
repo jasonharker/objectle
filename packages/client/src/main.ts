@@ -19,6 +19,8 @@ const endSection = document.querySelector<HTMLElement>('#end-of-game')!;
 let names: string[] = [];
 let current: GameResponse | undefined;
 let drawnGhosts = 0;
+/** Releases the current Ghost drawing, if there is one. */
+let disposeGhosts = () => {};
 
 const sizeText: Record<Feedback['size'], string> = {
   bigger: 'the Daily Object is bigger',
@@ -34,14 +36,19 @@ function feedbackText({ category, size, naturalOrMade, primaryMaterial }: Feedba
 async function drawGhosts(wrongGuesses: WrongGuess[]) {
   drawnGhosts = wrongGuesses.length;
   ghostView.hidden = wrongGuesses.length === 0;
-  if (wrongGuesses.length === 0) return ghostView.replaceChildren();
+  if (wrongGuesses.length === 0) {
+    disposeGhosts();
+    disposeGhosts = () => {};
+    return ghostView.replaceChildren();
+  }
   const ghosts = await Promise.all(
     wrongGuesses.map(async ({ ghost }) => scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize)),
   );
   if (drawnGhosts !== wrongGuesses.length) return; // a later Guess is being drawn
   const canvas = document.createElement('canvas');
+  disposeGhosts();
   ghostView.replaceChildren(canvas);
-  drawStage(canvas, hiddenDailyObject(), ghosts);
+  disposeGhosts = drawStage(canvas, hiddenDailyObject(), ghosts);
 }
 
 function render(game: GameResponse) {

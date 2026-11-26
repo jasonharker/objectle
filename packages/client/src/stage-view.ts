@@ -32,9 +32,10 @@ export function hiddenDailyObject(): Object3D {
 /**
  * Draw a model and its Ghosts through the normalization shader. Models are at
  * real-world scale, so placing them side by side unscaled shows the Ghosts at
- * true relative scale.
+ * true relative scale. Returns a function that stops redrawing on resize and
+ * releases the canvas's WebGL context; call it before replacing the drawing.
  */
-export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Object3D[] = []): void {
+export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Object3D[] = []): () => void {
   const scene = new Scene();
   let x = 0;
   for (const object of [model, ...ghosts]) {
@@ -62,5 +63,12 @@ export function drawStage(canvas: HTMLCanvasElement, model: Object3D, ghosts: Ob
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
   };
-  new ResizeObserver(render).observe(canvas);
+  const observer = new ResizeObserver(render);
+  observer.observe(canvas);
+  return () => {
+    observer.disconnect();
+    renderer.dispose();
+    // Browsers cap live WebGL contexts; dispose() alone keeps this one until GC.
+    renderer.forceContextLoss();
+  };
 }
