@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { ContentBundle, GameResponse } from '@objectle/shared';
-import { fixtureDir, playGuesses, resumeGame, startApi, startGame, submitGuess } from './harness.ts';
+import { copyFixture, fixtureDir, playGuesses, resumeGame, startApi, startGame, submitGuess } from './harness.ts';
 
 // Launch Date 2027-03-01: Puzzle Number 1, whose Daily Object is the teapot.
 const day1 = '2027-03-01T20:00:00Z';
@@ -135,6 +135,20 @@ describe('The Play Token', () => {
     for (const [label, token] of Object.entries(tokens)) {
       expect((await resumeGame(api, token)).statusCode, label).toBe(400);
     }
+  });
+
+  test('a Play Token with a Guess a content redeploy dropped from the Guess Vocabulary is rejected, not a 500', async () => {
+    const { api, game } = await newGame();
+    const [played] = await playGuesses(api, game.playToken, [wrong[1]]);
+
+    const contentDir = await copyFixture();
+    const bundle = await fixtureBundle();
+    bundle.guessVocabulary = bundle.guessVocabulary.filter(({ name }) => name !== wrong[1]);
+    await writeFile(join(contentDir, 'bundle.json'), JSON.stringify(bundle));
+    const redeployed = await startApi({ now: day1, contentDir });
+
+    expect((await resumeGame(redeployed, played.playToken)).statusCode).toBe(400);
+    expect((await submitGuess(redeployed, played.playToken, wrong[0])).statusCode).toBe(400);
   });
 
   test('a Guess without a Play Token is rejected', async () => {

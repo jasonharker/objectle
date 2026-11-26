@@ -75,6 +75,16 @@ export function buildApp({
   const modelCredit = (name: string): ModelCredit => ({ name, credit: creditByName.get(name)! });
   const credits: CreditsResponse = { credits: [...vocabulary].sort().map(modelCredit) };
 
+  /**
+   * The progress a Play Token records, or undefined if it is not valid. A
+   * token naming a Guess the current Guess Vocabulary no longer has (content
+   * was redeployed since) can never be resumed, so it is not valid either.
+   */
+  const verify = (playToken: unknown): Progress | undefined => {
+    const progress = verifyPlayToken(playToken, signingKey);
+    return progress?.guesses.every((guess) => vocabulary.has(guess)) ? progress : undefined;
+  };
+
   /** The active Puzzle Number, or why no game can be played right now. */
   const active = (): { puzzleNumber: number } | { status: number; body: ErrorResponse } => {
     const puzzleNumber = puzzleNumberAt(clock(), launchDate);
@@ -147,7 +157,7 @@ export function buildApp({
 
     const playToken = request.body?.playToken;
     if (playToken === undefined) return freshGame(today.puzzleNumber);
-    const progress = verifyPlayToken(playToken, signingKey);
+    const progress = verify(playToken);
     if (!progress) return reply.code(400).send(invalidPlayToken);
     return progress.puzzleNumber === today.puzzleNumber ? position(progress) : freshGame(today.puzzleNumber);
   });
@@ -158,7 +168,7 @@ export function buildApp({
     const today = active();
     if ('status' in today) return reply.code(today.status).send(today.body);
 
-    const progress = verifyPlayToken(request.body?.playToken, signingKey);
+    const progress = verify(request.body?.playToken);
     if (!progress) return reply.code(400).send(invalidPlayToken);
     if (progress.puzzleNumber !== today.puzzleNumber) return freshGame(today.puzzleNumber);
     if (play(progress).result) return reply.code(409).send({ error: 'This game has ended.' });
