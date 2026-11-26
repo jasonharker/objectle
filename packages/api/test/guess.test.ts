@@ -45,7 +45,7 @@ describe('A Guess', () => {
 
     const asset = await api.inject({ method: 'GET', url: next.stageAssets[0].url });
     expect(asset.statusCode).toBe(200);
-    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-2.svg')));
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-2.webp')));
   });
 
   test('each wrong Guess advances exactly one Reveal Stage, up to Reveal Stage 6', async () => {
@@ -219,13 +219,71 @@ describe('Reveal Stages', () => {
     }
   });
 
-  test('each Reveal Stage serves that stage’s own assets', async () => {
+  test('only Reveal Stage 6 shows the first letter of the Daily Object’s name', async () => {
+    const { api, game } = await newGame();
+    const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];
+    expect(games.map((g) => g.firstLetter)).toEqual([null, null, null, null, null, 't']);
+  });
+
+  test('each Reveal Stage serves that stage’s own assets: images through stage 5, a model at stage 6', async () => {
+    const { revealStages } = (await fixtureBundle()).answerPool.find(({ noun }) => noun === daily)!;
     const { api, game } = await newGame();
     const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];
     for (const g of games) {
       const asset = await api.inject({ method: 'GET', url: g.stageAssets[0].url });
-      const expected = await readFile(join(fixtureDir, `assets/teapot-stage-${g.revealStage}.svg`));
+      const expected = await readFile(join(fixtureDir, revealStages[g.revealStage - 1].assets[0]));
       expect(asset.rawPayload, `Reveal Stage ${g.revealStage}`).toEqual(expected);
+      expect(asset.headers['content-type']).toBe(g.stageAssets[0].mediaType);
+    }
+    expect(games.map((g) => g.stageAssets.map(({ mediaType }) => mediaType))).toEqual([
+      ...Array(5).fill(['image/webp']),
+      ['model/gltf-binary'],
+    ]);
+  });
+
+  describe.each([1, 2, 3, 4, 5])('a response for Reveal Stage %i', (n) => {
+    /** Each Reveal Stage's response and the payloads of the assets it names, index 0 being stage 1. */
+    async function everyStage() {
+      const { api, game } = await newGame();
+      const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];
+      return Promise.all(
+        games.map(async (g) => ({
+          game: g,
+          payloads: await Promise.all(
+            g.stageAssets.map(async ({ url }) => (await api.inject({ method: 'GET', url })).rawPayload),
+          ),
+        })),
+      );
+    }
+
+    test('serves no payload of a later Reveal Stage', async () => {
+      const stages = await everyStage();
+      const { payloads } = stages[n - 1];
+      for (const later of stages.slice(n)) {
+        for (const payload of later.payloads) {
+          for (const own of payloads) expect(own.equals(payload)).toBe(false);
+        }
+      }
+    });
+
+    test('shows no first letter, which only Reveal Stage 6 does', async () => {
+      const { game } = (await everyStage())[n - 1];
+      expect(game.firstLetter).toBeNull();
+    });
+  });
+
+  test.each([1, 2, 3, 4, 5, 6])('no asset id or payload at Reveal Stage %i contains a noun name', async (n) => {
+    const names = (await fixtureBundle()).guessVocabulary.map(({ name }) => name.toLowerCase());
+    const { api, game } = await newGame();
+    const games = [game, ...(await playGuesses(api, game.playToken, wrong.slice(0, 5)))];
+    for (const { url } of games[n - 1].stageAssets) {
+      const payload = (await api.inject({ method: 'GET', url })).rawPayload.toString('latin1').toLowerCase();
+      for (const name of names) {
+        expect(url.toLowerCase()).not.toContain(name);
+        expect(payload).not.toContain(name);
+        expect(payload).not.toContain(name.replaceAll(' ', '-'));
+        expect(payload).not.toContain(name.replaceAll(' ', '_'));
+      }
     }
   });
 

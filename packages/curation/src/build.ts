@@ -5,8 +5,8 @@
 // A content directory holds the curation input files below plus the model and
 // stage asset files they name, by paths relative to the directory. Answer Pool
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
-// its asset files as given; rendering them from Stage Cameras (ADR-0006) is
-// later work. schedule.json is carried into the bundle as written; generating
+// its asset files as given, checked against the ADR-0006 stage asset format;
+// rendering them from Stage Cameras is later work. schedule.json is carried into the bundle as written; generating
 // it around Pins is #13.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -21,6 +21,7 @@ import {
   type GuessVocabularyEntry,
   type ScheduleEntry,
 } from '@objectle/shared';
+import { stageAssetProblems } from '@objectle/shared/stage-assets';
 
 export const inputFiles = {
   guessVocabulary: 'guess-vocabulary.json',
@@ -117,6 +118,8 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
 
   const guessVocabulary: GuessVocabularyEntry[] = [];
   const names = new Set<string>();
+  /** Model paths by the hash of their bytes: a stage asset with a model's bytes would match its Ghost. */
+  const modelsByHash = new Map<string, string>();
   for (const [index, entry] of (vocabularyInput ?? []).entries()) {
     if (!isObject(entry) || !isText(entry.name)) {
       problems.push(`Guess Vocabulary entry ${index + 1} has no name`);
@@ -128,7 +131,10 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
     names.add(name);
 
     if (isMissing(model)) problems.push(`${label} has no model`);
-    else await check(model, 'model', label);
+    else {
+      const bytes = await check(model, 'model', label);
+      if (bytes !== undefined) modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+    }
 
     if (isMissing(category)) problems.push(`${label} has no Category`);
     else if (!oneOf(categories, category)) {
@@ -192,7 +198,16 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
         for (const asset of assets) {
           const bytes = await check(asset, 'asset', stageLabel);
           if (bytes === undefined) continue;
+          for (const problem of stageAssetProblems(stageIndex + 1, bytes)) {
+            problems.push(`${stageLabel} has asset ${asset as string}, which ${problem}`);
+          }
           const hash = createHash('sha256').update(bytes).digest('hex');
+          const model = modelsByHash.get(hash);
+          if (model !== undefined) {
+            problems.push(
+              `${stageLabel} has asset ${asset as string}, whose bytes are the same as the model ${model}'s, which a Ghost would match`,
+            );
+          }
           const other = stageAssetsByHash.get(hash);
           if (other !== undefined && other !== asset) {
             problems.push(`${stageLabel} has asset ${asset as string}, whose bytes are the same as ${other}'s`);

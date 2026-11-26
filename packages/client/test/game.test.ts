@@ -4,7 +4,7 @@ import { Box3, Vector3, type Object3D } from 'three';
 import { describe, expect, test } from 'vitest';
 import { startApi } from '../../api/test/harness.ts';
 import { loadCredits, loadGuessVocabulary, outageMessage, startGame, submitGuess } from '../src/game.ts';
-import { loadModel } from '../src/model-loader.ts';
+import { dailyObjectModel, loadModel, modelMediaType } from '../src/model-loader.ts';
 import { hiddenDailyObject, scaleToLongestDimension } from '../src/stage-view.ts';
 
 async function apiFetch(now: string): Promise<typeof fetch> {
@@ -138,6 +138,36 @@ test('a Guess with a stored Play Token the API rejects drops it and starts a fre
   expect(game.revealStage).toBe(1);
   expect(game.guesses).toEqual([]);
   expect(storage.getItem('objectle.playToken')).toBe(game.playToken);
+});
+
+test('Reveal Stages 1–5 are images; stage 6 is a model with its Stage Camera and the first letter', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  const games = [await startGame(fetch, storage)];
+  for (const guess of ['teapot', 'wooden spoon', 'claw hammer', 'rubber duck', 'tennis ball']) {
+    games.push(await submitGuess(fetch, storage, guess));
+  }
+
+  expect(games.map((game) => game.stageAssets.map(({ mediaType }) => mediaType))).toEqual([
+    ...Array(5).fill(['image/webp']),
+    [modelMediaType],
+  ]);
+  expect(games.map(dailyObjectModel)).toEqual([undefined, undefined, undefined, undefined, undefined, games[5].stageAssets[0].url]);
+  expect(games[5].firstLetter).toBe('p');
+  const model = await loadModel(fetch, dailyObjectModel(games[5])!);
+  expect(model.getObjectByProperty('isCamera', true)).toBeDefined();
+});
+
+test('once the game ends, the Daily Object’s model loads whatever Reveal Stage it ended at', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  await startGame(fetch, storage);
+  await submitGuess(fetch, storage, 'teapot');
+  const end = await submitGuess(fetch, storage, 'pinecone');
+
+  expect(end.revealStage).toBe(2);
+  const model = await loadModel(fetch, dailyObjectModel(end)!);
+  expect(new Box3().setFromObject(model).isEmpty()).toBe(false);
 });
 
 test('the Guess that ends the game brings the end-of-game payload', async () => {

@@ -136,6 +136,8 @@ export interface GameResponse {
   puzzleNumber: number;
   revealStage: number;
   stageAssets: StageAsset[];
+  /** From Reveal Stage 6 on, the first letter of the Daily Object's name; null before. */
+  firstLetter: string | null;
   /** Guess Vocabulary names guessed so far, in order. */
   guesses: string[];
   /** The game's Result, or null while it is still being played. */
@@ -163,6 +165,11 @@ export interface Distribution {
 export interface EndOfGame {
   /** The Daily Object's name and Credit. */
   dailyObject: ModelCredit;
+  /**
+   * Reveal Stage 6's assets, whatever Reveal Stage the game ended at, so the
+   * Daily Object's model can take the hidden ball's place beside the Ghosts.
+   */
+  lastStageAssets: StageAsset[];
   /** The Credit of each Ghost, in the order guessed. */
   ghostCredits: ModelCredit[];
   /** Every game finished so far on this Puzzle Number, the player's included. */

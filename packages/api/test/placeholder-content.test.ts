@@ -17,3 +17,9 @@ test('schedules a Daily Object for every Puzzle Number of the first year', async
     for (const assets of stages!) expect(assets.length, `Puzzle Number ${puzzleNumber}`).toBeGreaterThan(0);
   }
 });
+
+test('has enough Guess Vocabulary to play every Daily Object through all six Reveal Stages', async () => {
+  const content = await loadContent(placeholderDir);
+  // Five wrong Guesses reach Reveal Stage 6; the sixth Guess can be the Daily Object.
+  expect(content.bundle.guessVocabulary.length).toBeGreaterThanOrEqual(6);
+});

@@ -38,7 +38,9 @@ function noun(name: string, attributes: Json = {}): Json {
 function answerPoolEntry(name: string, difficultyRating = 'easy'): Json {
   return {
     noun: name,
-    revealStages: [1, 2, 3, 4, 5, 6].map((stage) => ({ assets: [`assets/${slug(name)}-stage-${stage}.webp`] })),
+    revealStages: [1, 2, 3, 4, 5, 6].map((stage) => ({
+      assets: [`assets/${slug(name)}-stage-${stage}.${stage < 6 ? 'webp' : 'glb'}`],
+    })),
     difficultyRating,
   };
 }
@@ -59,6 +61,36 @@ function validContent(): ContentInput {
 }
 
 /**
+ * File bytes in the format a path's extension names, distinct per path: a
+ * 1024×1024 lossless WebP header, or a binary glTF with no names, each
+ * followed by the path as payload (ADR-0006). Nothing decodes the payload.
+ */
+function fileBytes(path: string): Buffer {
+  const payload = Buffer.from(`bytes of ${path}`);
+  if (path.endsWith('.webp')) {
+    const image = Buffer.concat([Buffer.from([0x2f, 0xff, 0xc3, 0xff, 0x00]), payload]);
+    const header = Buffer.alloc(20);
+    header.write('RIFF', 0, 'latin1');
+    header.writeUInt32LE(12 + image.length + (image.length % 2), 4);
+    header.write('WEBPVP8L', 8, 'latin1');
+    header.writeUInt32LE(image.length, 16);
+    return Buffer.concat([header, image, Buffer.alloc(image.length % 2)]);
+  }
+  const json = Buffer.from(JSON.stringify({ asset: { version: '2.0' } }).padEnd(28));
+  const bin = Buffer.concat([payload, Buffer.alloc((4 - (payload.length % 4)) % 4)]);
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(28 + json.length + bin.length, 8);
+  header.writeUInt32LE(json.length, 12);
+  header.writeUInt32LE(0x4e4f534a, 16);
+  const binHeader = Buffer.alloc(8);
+  binHeader.writeUInt32LE(bin.length, 0);
+  binHeader.writeUInt32LE(0x004e4942, 4);
+  return Buffer.concat([header, json, binHeader, bin]);
+}
+
+/**
  * Write a content directory: the curation input files plus a distinct model
  * and stage asset file for every path the valid content names. `edit` changes
  * the JSON after the files are written, so it can point at missing files.
@@ -72,7 +104,7 @@ async function contentDir(edit: (content: ContentInput) => void = () => {}): Pro
   ];
   for (const file of files) {
     await mkdir(dirname(join(dir, file)), { recursive: true });
-    await writeFile(join(dir, file), `bytes of ${file}`);
+    await writeFile(join(dir, file), fileBytes(file));
   }
   edit(content);
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(content.guessVocabulary));
@@ -362,6 +394,34 @@ describe.concurrent('An Answer Pool object', () => {
     const run = await curate(dir);
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/"pinecone" Reveal Stage 1 .*assets\/copy\.webp.*assets\/teapot-stage-1\.webp/);
+  });
+});
+
+describe.concurrent('A Reveal Stage asset (ADR-0006)', () => {
+  test('that is not a lossless 1024×1024 WebP at Reveal Stages 1–5 fails, naming the noun, stage, file and problem', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'assets/teapot-stage-2.webp'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 2 .*assets\/teapot-stage-2\.webp, which is not a WebP image/);
+  });
+
+  test('that carries a name at Reveal Stage 6 fails, naming the noun, stage, file and problem', async () => {
+    const dir = await contentDir();
+    const named = fileBytes('assets/pinecone-stage-6.glb');
+    named.write('{"name":"cone","asset":{}}'.padEnd(28), 20); // same length as the JSON chunk it replaces
+    await writeFile(join(dir, 'assets/pinecone-stage-6.glb'), named);
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/"pinecone" Reveal Stage 6 .*assets\/pinecone-stage-6\.glb, which carries a name/);
+  });
+
+  test('with the bytes of a Guess Vocabulary model fails, since a Ghost would match it', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'assets/teapot-stage-6.glb'), await readFile(join(dir, 'models/wooden-spoon.glb')));
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 6 .*teapot-stage-6\.glb, whose bytes .* models\/wooden-spoon\.glb/);
   });
 });
 
