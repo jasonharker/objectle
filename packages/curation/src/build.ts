@@ -36,12 +36,12 @@ const isMissing = (value: unknown) => value === undefined || value === null;
 const oneOf = <T extends string>(set: readonly T[], value: unknown): value is T => set.includes(value as T);
 
 /** Whether a path names a file inside the content directory, so it lands inside the bundle directory too. */
-function staysInside(path: string): boolean {
+export function staysInside(path: string): boolean {
   const normalized = normalize(path);
   return !isAbsolute(path) && normalized !== '..' && !normalized.startsWith(`..${sep}`);
 }
 
-async function readInput(contentDir: string, file: string, problems: string[]): Promise<unknown[] | undefined> {
+export async function readInput(contentDir: string, file: string, problems: string[]): Promise<unknown[] | undefined> {
   let text: string;
   try {
     text = await readFile(join(contentDir, file), 'utf8');
@@ -61,6 +61,15 @@ async function readInput(contentDir: string, file: string, problems: string[]): 
     return undefined;
   }
   return value;
+}
+
+/** Why a noun's Credit can't be shown, if it can't: every model needs an author, source and license. */
+export function creditProblems(credit: unknown, label: string): string[] {
+  if (isMissing(credit)) return [`${label} has no Credit`];
+  if (!isObject(credit)) return [`${label} has a Credit that is not an author, source and license`];
+  return ['author', 'source', 'license'].flatMap((field) =>
+    isText(credit[field]) ? [] : [`${label} has a Credit with no ${field}`],
+  );
 }
 
 /**
@@ -141,13 +150,7 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
       problems.push(`${label} has Primary Material ${JSON.stringify(primaryMaterial)}, which is not a Primary Material`);
     }
 
-    if (isMissing(credit)) problems.push(`${label} has no Credit`);
-    else if (!isObject(credit)) problems.push(`${label} has a Credit that is not an author, source and license`);
-    else {
-      for (const field of ['author', 'source', 'license']) {
-        if (!isText(credit[field])) problems.push(`${label} has a Credit with no ${field}`);
-      }
-    }
+    problems.push(...creditProblems(credit, label));
 
     guessVocabulary.push({
       name,
