@@ -1,0 +1,78 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #14151f;
+  color: #edf2f4;
+}
+
+body {
+  margin: 1rem;
+}
+
+header,
+#stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+#stages {
+  margin: 1rem 0;
+}
+
+#workspace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+#view-frame {
+  position: relative;
+  width: min(512px, 90vw);
+  aspect-ratio: 1;
+  /* The client's backdrop behind a Reveal Stage image (packages/client/src/style.css). */
+  background: #3a3d52;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#view-frame.marking #view {
+  cursor: crosshair;
+}
+
+#mark-box {
+  position: absolute;
+  border: 2px dashed #ffd166;
+  pointer-events: none;
+}
+
+#camera-fields {
+  display: grid;
+  gap: 0.25rem;
+}
+
+#live-warning {
+  color: #ffd166;
+  min-height: 1.5em;
+}
+
+#player {
+  /* A phone's width, so the preview is the player's layout. */
+  width: 390px;
+  height: 600px;
+  border: 1px solid #3a3d52;
+}
+
+#save-status {
+  max-width: 390px;
+}

@@ -218,13 +218,22 @@ importers:
         version: 8.23.1
 
   packages/authoring:
-    dependencies:
+    devDependencies:
+      '@objectle/api':
+        specifier: workspace:*
+        version: link:../api
       '@objectle/client':
         specifier: workspace:*
         version: link:../client
+      '@objectle/curation':
+        specifier: workspace:*
+        version: link:../curation
       '@objectle/shared':
         specifier: workspace:*
         version: link:../shared
+      '@types/three':
+        specifier: ^0.187.0
+        version: 0.187.0
       playwright-core:
         specifier: 1.65.1
         version: 1.65.1
@@ -234,16 +243,6 @@ importers:
       vite:
         specifier: ^8.3.8
         version: 8.3.8(@types/node@26.6.6)
-    devDependencies:
-      '@objectle/api':
-        specifier: workspace:*
-        version: link:../api
-      '@objectle/curation':
-        specifier: workspace:*
-        version: link:../curation
-      '@types/three':
-        specifier: ^0.187.0
-        version: 0.187.0
 
   packages/client:
     dependencies:

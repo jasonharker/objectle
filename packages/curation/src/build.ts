@@ -6,7 +6,8 @@
 // stage asset files they name, by paths relative to the directory. Answer Pool
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
 // its asset files as given, checked against the ADR-0006 stage asset format;
-// rendering them from Stage Cameras is later work. schedule.json is the
+// the stage-authoring tool (packages/authoring) renders them from the Stage
+// Cameras it records beside them, which the build ignores. schedule.json is the
 // previously published Schedule: the bundle's schedule, copied back when it is
 // published. The build extends it around the Pins in pins.json ({ date, noun },
 // by Pacific date) by ADR-0007.
