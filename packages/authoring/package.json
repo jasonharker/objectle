@@ -2,7 +2,7 @@
   "name": "@objectle/authoring",
   "private": true,
   "type": "module",
-  "//": "A curator-only tool, never deployed: every dependency is a dev dependency, so the API image's production install leaves them out.",
+  "//": "A curator-only tool, never deployed: the API image installs only the API's production dependencies and the workspace packages they name (the Dockerfile's deps stage), so nothing here reaches it, whatever kind of dependency it is.",
   "devDependencies": {
     "@objectle/api": "workspace:*",
     "@objectle/client": "workspace:*",
