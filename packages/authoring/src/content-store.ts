@@ -106,8 +106,8 @@ const slug = (noun: string) => noun.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')
 /**
  * Record an authored Answer Pool object and its rendered Reveal Stage assets
  * in `contentDir`, replacing any earlier entry for its noun and keeping every
- * other entry as it was. Returns every problem found; when there are any,
- * nothing is written.
+ * other entry as it was, and refusing asset paths another entry records.
+ * Returns every problem found; when there are any, nothing is written.
  */
 export async function saveAuthoredObject(
   contentDir: string,
@@ -124,9 +124,17 @@ export async function saveAuthoredObject(
       problems.push(`the rendered asset of Reveal Stage ${index + 1} ${problem}`);
     }
   });
+  const paths = assets.map((_, index) => `assets/${slug(object.noun)}-stage-${index + 1}.${index < stageCameraCount ? 'webp' : 'glb'}`);
+  // Nouns differing only in case or punctuation share a slug; saving one would overwrite the other's assets.
+  for (const other of answerPool) {
+    if (other.noun === object.noun || !Array.isArray(other.revealStages)) continue;
+    const taken = other.revealStages.flatMap((stage: Json) => (Array.isArray(stage?.assets) ? stage.assets : []));
+    if (paths.some((path) => taken.includes(path))) {
+      problems.push(`Answer Pool object "${object.noun}" would write its Reveal Stage assets over those of "${other.noun}"`);
+    }
+  }
   if (problems.length > 0) return problems;
 
-  const paths = assets.map((_, index) => `assets/${slug(object.noun)}-stage-${index + 1}.${index < stageCameraCount ? 'webp' : 'glb'}`);
   await mkdir(join(contentDir, 'assets'), { recursive: true });
   await Promise.all(paths.map((path, index) => writeFile(join(contentDir, path), assets[index])));
 

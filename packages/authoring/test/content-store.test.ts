@@ -140,6 +140,22 @@ describe('saving an authored Answer Pool object', () => {
     expect(await readJson(dir, 'answer-pool.json')).toEqual([]);
   });
 
+  test('refuses a noun whose asset paths belong to another Answer Pool object, leaving that object’s assets as they were', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'objectle-authoring-'));
+    const vocabulary = ['pine cone', 'pine-cone'].map((name) => ({ name, model: `models/${name}.glb` }));
+    await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(vocabulary));
+    expect(await saveAuthoredObject(dir, authored('pine cone'), assets('pine cone'))).toEqual([]);
+    const before = await readJson(dir, 'answer-pool.json');
+
+    const problems = await saveAuthoredObject(dir, authored('pine-cone'), assets('pine-cone'));
+    expect(problems.join('\n')).toContain('"pine cone"');
+    expect(await readJson(dir, 'answer-pool.json')).toEqual(before);
+    for (const [index, stage] of before[0].revealStages.entries()) {
+      const expected = index < 5 ? assets('pine cone').images[index] : assets('pine cone').model;
+      expect(await readFile(join(dir, stage.assets[0]))).toEqual(expected);
+    }
+  });
+
   test('refuses an asset the curation build would refuse, naming its Reveal Stage', async () => {
     const dir = await contentDir();
     const lossy = Buffer.from(webp('x').toString('latin1').replace('VP8L', 'VP8 '), 'latin1');
