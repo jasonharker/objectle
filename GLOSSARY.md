@@ -19,7 +19,7 @@ The Pacific date of Puzzle Number 1, from which every later Puzzle Number is cou
 _Avoid_: start date, epoch
 
 **Reveal Stage**:
-One of six fixed steps of increasing disclosure of the Daily Object, alternating between shape and surface information (shape stages show no surface relief); stage 6 adds free orbit and the first letter.
+One of six fixed steps of increasing disclosure of the Daily Object, alternating between shape and surface information (shape stages show no surface relief): 1, a surface crop lying wholly inside the object's outline; 2, a silhouette; 3, a wider surface crop; 4, a clay render; 5, the whole object rendered; 6, the stage-5 view with free orbit and the first letter.
 _Avoid_: hint, level, step, clue
 
 **Guess**:
