@@ -318,8 +318,8 @@ saveButton.addEventListener('click', async () => {
     const rendered = await renderRevealStages(offscreen, model, object.stageCameras, textMarks);
     const problems = rendered.problems.length > 0 ? rendered.problems : await saveObject(object, rendered);
     if (problems.length > 0) return status(...problems);
-    content.authored = [...content.authored.filter((authored) => authored.noun !== noun), object];
-    status(`Saved ${noun}: its six Reveal Stages are written; run the curation build to publish them.`);
+    content.authored = [...content.authored.filter((authored) => authored.noun !== object.noun), object];
+    status(`Saved ${object.noun}: its six Reveal Stages are written; run the curation build to publish them.`);
   } catch (error) {
     status(`Saving failed: ${(error as Error).message}`);
   } finally {
@@ -329,17 +329,17 @@ saveButton.addEventListener('click', async () => {
 
 // Choosing the object.
 nounSelect.addEventListener('change', async () => {
-  noun = nounSelect.value;
+  const chosen = (noun = nounSelect.value);
   model = looks = undefined;
   saveButton.disabled = true;
-  if (noun === '') return;
-  modelStatus.textContent = `Loading ${noun}…`;
+  if (chosen === '') return;
+  modelStatus.textContent = `Loading ${chosen}…`;
   try {
-    const loaded = await fetchModel(noun);
-    if (noun !== nounSelect.value) return; // another noun was chosen meanwhile
+    const loaded = await fetchModel(chosen);
+    if (chosen !== noun) return; // another noun was chosen meanwhile
     model = loaded;
   } catch (error) {
-    modelStatus.textContent = (error as Error).message;
+    if (chosen === noun) modelStatus.textContent = (error as Error).message;
     return;
   }
   const authored = content.authored.find((object) => object.noun === noun);

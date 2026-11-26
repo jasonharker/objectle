@@ -76,6 +76,9 @@ async function view(page: Page, stage: number, [position, target, fov]: [string,
   await page.getByLabel('Field of view').press('Enter');
 }
 
+/** The JSON chunk of a binary glTF. */
+const glbJson = (bytes: Buffer): Json => JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString('utf8'));
+
 const readJson = async (dir: string, file: string) => JSON.parse(await readFile(join(dir, file), 'utf8'));
 
 describe.skipIf(chromiumPath() === undefined)('the stage-authoring tool', { timeout: 60_000 }, () => {
@@ -110,6 +113,44 @@ describe.skipIf(chromiumPath() === undefined)('the stage-authoring tool', { time
     await reopened.getByLabel('Reveal Stage 3', { exact: true }).check();
     expect(numbers(await reopened.getByLabel('Camera position').inputValue())).toEqual(numbers(views[3][0]));
     await reopened.close();
+  });
+
+  test('keeps the model of the noun chosen last when an earlier choice’s model loads after it', async () => {
+    const dir = await contentDir();
+    const page = await openTool(dir);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname === '/authoring/model' && url.searchParams.get('noun') === 'kettle',
+      async (route) => {
+        await held;
+        await route.continue();
+      },
+    );
+    const kettleLoaded = page.waitForResponse((response) => new URL(response.url()).searchParams.get('noun') === 'kettle');
+    await page.getByLabel('Answer Pool object').selectOption('kettle');
+    await page.getByLabel('Answer Pool object').selectOption('tea caddy');
+    await page.getByText('Model loaded: tea caddy').waitFor();
+    release();
+    await (await kettleLoaded).finished();
+
+    for (const stage of [1, 2, 3, 4, 5]) {
+      await view(page, stage, views[stage]);
+      await page.getByRole('button', { name: 'Use this view as the Stage Camera' }).click();
+    }
+    await page.getByLabel('Difficulty Rating').selectOption('easy');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByText('Saved tea caddy').waitFor();
+    await page.close();
+    const [entry] = await readJson(dir, 'answer-pool.json');
+    expect(entry.noun).toBe('tea caddy');
+    // The two models differ only in their body colour: tea caddy's is [0.5, 0.2, 0.1], kettle's [0.5, 0.3, 0.1].
+    const stage6 = glbJson(await readFile(join(dir, entry.revealStages[5].assets[0])));
+    const [red, green] = stage6.materials.map((material: Json) => material.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1]).find(
+      ([r]: number[]) => Math.abs(r - 0.5) < 0.01,
+    );
+    expect(red).toBeCloseTo(0.5, 2);
+    expect(green).toBeCloseTo(0.2, 2);
   });
 
   test('warns live when a Reveal Stage 1 view frames background, and refuses to save it', async () => {
