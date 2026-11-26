@@ -71,8 +71,20 @@ A fixed assignment of a specific Answer Pool object to a specific date, which th
 _Avoid_: lock, reservation, override
 
 **Schedule**:
-The assignment of an Answer Pool object to every Puzzle Number, generated around Pins; past Puzzle Numbers are never reassigned.
+The assignment of an Answer Pool object to each Puzzle Number through the Planning Horizon, generated around Pins; once assigned, a Puzzle Number keeps its object unless a Pin or that object leaving the Answer Pool forces a change, and a past or active Puzzle Number is never reassigned, even after its object leaves the Answer Pool.
 _Avoid_: calendar, rotation, playlist
+
+**Difficulty Pattern**:
+The Difficulty Rating the generated Schedule aims for on each Pacific day of the week: easy Monday and Tuesday, medium Wednesday and Thursday, hard Friday and Saturday, medium Sunday; Pins ignore it, and a day with no eligible object of its rating takes the nearest rating that has one.
+_Avoid_: difficulty curve, weekly rhythm
+
+**Planning Horizon**:
+How far past the active Puzzle Number each curation build assigns the Schedule: 90 Puzzle Numbers, or fewer when the Answer Pool cannot fill them without breaking the Repeat Gap.
+_Avoid_: lookahead, runway, buffer
+
+**Repeat Gap**:
+The minimum number of Puzzle Numbers between two appearances of the same Answer Pool object as the Daily Object: 365. A Pin may fall inside it; the generated Schedule never does, including around Pins.
+_Avoid_: cooldown, rotation period
 
 **Stage Camera**:
 The fixed view the curator chose for an authored Reveal Stage; a Stage Camera for Reveal Stages 1–3 never frames readable text.
