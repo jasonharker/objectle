@@ -51,6 +51,13 @@ function contentEndpoints(contentDir: string): Plugin {
             return send(response, 200, await readFile(join(contentDir, entry.model)), 'model/gltf-binary');
           }
           if (request.method === 'POST' && url.pathname === '/authoring/save') {
+            // Any page the curator has open can POST here; only the tool's own page may save. Requiring
+            // JSON also makes a cross-origin fetch need a preflight, which nothing here answers.
+            const { origin, host } = request.headers;
+            if (origin !== undefined && origin !== `http://${host}`) return send(response, 403, { error: 'saving is only allowed from the tool' });
+            if (!/^application\/json\b/.test(request.headers['content-type'] ?? '')) {
+              return send(response, 415, { error: 'a save must be sent as application/json' });
+            }
             const { object, images, model } = JSON.parse(await body(request)) as SaveRequest;
             const problems = await saveAuthoredObject(contentDir, object, {
               images: images.map((image) => Buffer.from(image, 'base64')),

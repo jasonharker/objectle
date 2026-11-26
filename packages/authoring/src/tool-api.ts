@@ -18,7 +18,7 @@ const base64 = (bytes: Uint8Array) => {
 /** Save an authored object and its rendered assets; returns why they were refused, if they were. */
 export async function saveObject(object: AuthoredObject, { images, model }: { images: Uint8Array[]; model: Uint8Array }) {
   const request: SaveRequest = { object, images: images.map(base64), model: base64(model) };
-  const response = await fetch('/authoring/save', { method: 'POST', body: JSON.stringify(request) });
+  const response = await fetch('/authoring/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error);
   return result.problems as string[];
