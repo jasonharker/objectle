@@ -1,0 +1,74 @@
+[
+  {
+    "name": "teapot",
+    "model": "models/teapot.glb",
+    "category": "Cooking & Dining",
+    "size": 0.24,
+    "naturalOrMade": "made",
+    "primaryMaterial": "ceramic",
+    "credit": { "author": "Fixture Author A", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "pinecone",
+    "model": "models/pinecone.glb",
+    "category": "Nature",
+    "size": 0.09,
+    "naturalOrMade": "natural",
+    "primaryMaterial": "wood",
+    "credit": { "author": "Fixture Author B", "source": "fixture", "license": "CC-BY-4.0" }
+  },
+  {
+    "name": "wooden spoon",
+    "model": "models/wooden-spoon.glb",
+    "category": "Cooking & Dining",
+    "size": 0.3,
+    "naturalOrMade": "made",
+    "primaryMaterial": "wood",
+    "credit": { "author": "Fixture Author C", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "claw hammer",
+    "model": "models/claw-hammer.glb",
+    "category": "Tools & Repair",
+    "size": 0.33,
+    "naturalOrMade": "made",
+    "primaryMaterial": "wood",
+    "credit": { "author": "Fixture Author D", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "rubber duck",
+    "model": "models/rubber-duck.glb",
+    "category": "Sport & Play",
+    "size": 0.1,
+    "naturalOrMade": "made",
+    "primaryMaterial": "plastic",
+    "credit": { "author": "Fixture Author E", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "tennis ball",
+    "model": "models/tennis-ball.glb",
+    "category": "Sport & Play",
+    "size": 0.067,
+    "naturalOrMade": "made",
+    "primaryMaterial": "fabric",
+    "credit": { "author": "Fixture Author F", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "paperclip",
+    "model": "models/paperclip.glb",
+    "category": "Office & Study",
+    "size": 0.033,
+    "naturalOrMade": "made",
+    "primaryMaterial": "metal",
+    "credit": { "author": "Fixture Author G", "source": "fixture", "license": "CC0-1.0" }
+  },
+  {
+    "name": "house brick",
+    "model": "models/house-brick.glb",
+    "category": "Tools & Repair",
+    "size": 0.215,
+    "naturalOrMade": "made",
+    "primaryMaterial": "stone",
+    "credit": { "author": "Fixture Author H", "source": "fixture", "license": "CC0-1.0" }
+  }
+]

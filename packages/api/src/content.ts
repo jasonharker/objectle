@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import type { ContentBundle, GuessVocabularyEntry } from '@objectle/shared';
+import { revealStageCount, type ContentBundle, type GuessVocabularyEntry } from '@objectle/shared';
+
+export { revealStageCount };
 
 /** A Reveal Stage asset, indexed at startup; its bytes stay on disk until it is requested. */
 export interface StageAsset {
@@ -14,9 +16,6 @@ export interface StageAsset {
   /** Path of the asset file. */
   file: string;
 }
-
-/** Every Answer Pool object has this many Reveal Stages. */
-export const revealStageCount = 6;
 
 export interface Content {
   bundle: ContentBundle;

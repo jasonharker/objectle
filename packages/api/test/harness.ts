@@ -1,13 +1,22 @@
-// Seam 1: the scoring API in-process, with an injected clock, the hand-written
-// content fixture and a test signing key. Tests talk to it only over HTTP.
+// Seam 1: the scoring API in-process, with an injected clock, the fixture
+// content bundle and a test signing key. Tests talk to it only over HTTP.
 import { cp, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildContent } from '@objectle/curation';
 import { buildApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
 
-export const fixtureDir = fileURLToPath(new URL('./fixture/', import.meta.url));
+/** The fixture content bundle, built by the curation build from the fixture content directory. */
+export const fixtureDir = await buildFixture();
+
+async function buildFixture(): Promise<string> {
+  const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-fixture-')), 'bundle');
+  const problems = await buildContent(fileURLToPath(new URL('./fixture/', import.meta.url)), bundleDir);
+  if (problems.length > 0) throw new Error(`the fixture content does not build:\n${problems.join('\n')}`);
+  return bundleDir;
+}
 export const testSigningKey = 'test-signing-key-test-signing-key';
 
 export interface Options {
