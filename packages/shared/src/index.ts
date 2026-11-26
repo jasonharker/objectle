@@ -101,6 +101,37 @@ export interface GameResponse {
   result: Result | null;
   /** Every wrong Guess so far, in order, with its Feedback and Ghost. */
   wrongGuesses: WrongGuess[];
+  /** The end-of-game payload, or null while the game is still being played. */
+  endOfGame: EndOfGame | null;
+}
+
+/** A Guess Vocabulary noun's name and its model's Credit. */
+export interface ModelCredit {
+  name: string;
+  credit: Credit;
+}
+
+/** The count of each Result among the games finished so far on one Puzzle Number. */
+export interface Distribution {
+  /** Index 0 counts games solved at Reveal Stage 1, index 5 those solved at Reveal Stage 6. */
+  solved: number[];
+  failed: number;
+}
+
+/** Disclosed only once a game has ended. */
+export interface EndOfGame {
+  /** The Daily Object's name and Credit. */
+  dailyObject: ModelCredit;
+  /** The Credit of each Ghost, in the order guessed. */
+  ghostCredits: ModelCredit[];
+  /** Every game finished so far on this Puzzle Number, the player's included. */
+  distribution: Distribution;
+  /**
+   * The percentage (0-100, unrounded) of other finished games with a worse
+   * Result, those with the same Result counting half; null while the player
+   * is the first to finish.
+   */
+  beatPercentage: number | null;
 }
 
 /** Request body of "start or resume": the stored Play Token, if any. */
@@ -117,6 +148,11 @@ export interface GuessRequest {
 /** Response to GET /api/guess-vocabulary: names only, never Attributes. */
 export interface GuessVocabularyResponse {
   names: string[];
+}
+
+/** Response to GET /api/credits: every Guess Vocabulary model's Credit, by name. */
+export interface CreditsResponse {
+  credits: ModelCredit[];
 }
 
 /** Body of every refused request. */

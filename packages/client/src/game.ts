@@ -1,9 +1,11 @@
 import type {
+  CreditsResponse,
   ErrorResponse,
   GameRequest,
   GameResponse,
   GuessRequest,
   GuessVocabularyResponse,
+  ModelCredit,
 } from '@objectle/shared';
 
 export const playTokenKey = 'objectle.playToken';
@@ -68,4 +70,9 @@ export async function submitGuess(fetchFn: typeof fetch, storage: TokenStorage, 
 /** The Guess Vocabulary names, for suggestions. */
 export async function loadGuessVocabulary(fetchFn: typeof fetch): Promise<string[]> {
   return (await callApi<GuessVocabularyResponse>(fetchFn, '/api/guess-vocabulary')).names;
+}
+
+/** Every model's Credit, for the credits page. */
+export async function loadCredits(fetchFn: typeof fetch): Promise<ModelCredit[]> {
+  return (await callApi<CreditsResponse>(fetchFn, '/api/credits')).credits;
 }
