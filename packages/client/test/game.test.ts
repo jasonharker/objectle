@@ -128,6 +128,18 @@ test('drops a stored Play Token the API rejects and starts a fresh game', async 
   expect(storage.getItem('objectle.playToken')).toBe(game.playToken);
 });
 
+test('a Guess with a stored Play Token the API rejects drops it and starts a fresh game', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  storage.setItem('objectle.playToken', 'not a play token');
+
+  const game = await submitGuess(fetch, storage, 'teapot');
+
+  expect(game.revealStage).toBe(1);
+  expect(game.guesses).toEqual([]);
+  expect(storage.getItem('objectle.playToken')).toBe(game.playToken);
+});
+
 test('the Guess that ends the game brings the end-of-game payload', async () => {
   const fetch = await apiFetch(day2);
   const storage = memoryStorage();

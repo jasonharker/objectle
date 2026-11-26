@@ -59,10 +59,21 @@ export async function startGame(fetchFn: typeof fetch, storage: TokenStorage): P
   return game;
 }
 
-/** Submit a Guess with the stored Play Token, and keep the updated one. */
+/**
+ * Submit a Guess with the stored Play Token, and keep the updated one. If the
+ * API rejects the stored Play Token, it is dropped and a fresh game started,
+ * without the Guess.
+ */
 export async function submitGuess(fetchFn: typeof fetch, storage: TokenStorage, guess: string): Promise<GameResponse> {
   const playToken = storage.getItem(playTokenKey) ?? '';
-  const game = await callApi<GameResponse>(fetchFn, '/api/guess', { playToken, guess });
+  let game: GameResponse;
+  try {
+    game = await callApi<GameResponse>(fetchFn, '/api/guess', { playToken, guess });
+  } catch (error) {
+    if (!(error instanceof RefusedError && error.status === 400)) throw error;
+    storage.removeItem(playTokenKey);
+    return startGame(fetchFn, storage);
+  }
   storage.setItem(playTokenKey, game.playToken);
   return game;
 }
