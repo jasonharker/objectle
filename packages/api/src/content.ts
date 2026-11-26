@@ -71,18 +71,26 @@ export async function loadContent(dir: string): Promise<Content> {
 
   const problems: string[] = [];
   const models = new Map<string, StageAsset>();
-  for (const { name, model } of bundle.guessVocabulary) {
+  for (const { name, model, size } of bundle.guessVocabulary) {
+    if (!(size > 0)) problems.push(`Guess Vocabulary noun "${name}" has Size ${size}, which is not positive`);
     try {
       models.set(name, await indexAsset(dir, model));
     } catch {
       problems.push(`Guess Vocabulary noun "${name}" has no readable model file ${model}`);
     }
   }
+  const inVocabulary = new Set(bundle.guessVocabulary.map(({ name }) => name));
   for (const entry of bundle.answerPool) {
+    if (!inVocabulary.has(entry.noun)) {
+      problems.push(`Answer Pool noun "${entry.noun}" has no Guess Vocabulary entry`);
+    }
     if (entry.revealStages.length !== revealStageCount) {
       problems.push(
         `Answer Pool noun "${entry.noun}" has ${entry.revealStages.length} Reveal Stages, not ${revealStageCount}`,
       );
+    }
+    for (const [index, stage] of entry.revealStages.entries()) {
+      if (stage.assets.length === 0) problems.push(`Answer Pool noun "${entry.noun}" Reveal Stage ${index + 1} has no assets`);
     }
   }
   for (const { puzzleNumber, noun } of bundle.schedule) {

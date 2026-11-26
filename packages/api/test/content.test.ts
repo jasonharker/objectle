@@ -62,3 +62,24 @@ test('refuses a Guess Vocabulary noun whose model file is missing', async () => 
   });
   await expect(loadContent(dir)).rejects.toThrow(/wooden spoon.*models\/missing\.glb/);
 });
+
+test('refuses an Answer Pool noun that is not in the Guess Vocabulary', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary = bundle.guessVocabulary.filter(({ name }) => name !== 'pinecone');
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/Answer Pool noun "pinecone".*Guess Vocabulary/);
+});
+
+test('refuses a Reveal Stage without assets', async () => {
+  const dir = await editedFixture((bundle) => {
+    bundle.answerPool[0].revealStages[3].assets = [];
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/teapot.*Reveal Stage 4.*no assets/);
+});
+
+test.each([0, -0.1])('refuses a Guess Vocabulary noun with Size %s', async (size) => {
+  const dir = await editedFixture((bundle) => {
+    bundle.guessVocabulary[3].size = size;
+  });
+  await expect(loadContent(dir)).rejects.toThrow(/claw hammer.*Size/);
+});
