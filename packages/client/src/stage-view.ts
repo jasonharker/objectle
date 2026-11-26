@@ -33,6 +33,36 @@ export function hiddenDailyObject(): Object3D {
 }
 
 /**
+ * The camera `scene` is first drawn from, and the point orbit turns about:
+ * with `orbit`, the camera `model` carries, if any, else one framing the
+ * whole scene.
+ */
+export function stageCamera(scene: Object3D, model: Object3D, orbit: boolean): { camera: PerspectiveCamera; target: Vector3 } {
+  const bounds = new Box3().setFromObject(scene).getBoundingSphere(new Sphere());
+  const camera = new PerspectiveCamera(30, 1, 0.01, 100);
+  const distance = bounds.radius / Math.sin((camera.fov * Math.PI) / 360);
+  camera.position.copy(bounds.center).add(new Vector3(0, 0.45, 1).setLength(distance));
+  camera.lookAt(bounds.center);
+  let target = bounds.center;
+  const carried = orbit ? (model.getObjectByProperty('isCamera', true) as Camera | undefined) : undefined;
+  if (carried) {
+    scene.updateMatrixWorld();
+    const scale = new Vector3();
+    carried.matrixWorld.decompose(camera.position, camera.quaternion, scale);
+    if (carried instanceof PerspectiveCamera) {
+      // Its clipping planes too, in world units, so the first frame clips where the stage-5 image did.
+      camera.fov = carried.fov;
+      camera.near = carried.near * scale.z;
+      camera.far = carried.far * scale.z;
+    }
+    // Orbit about the point straight ahead as far away as the model's centre, so the first frame is the carried view.
+    const ahead = camera.getWorldDirection(new Vector3()).multiplyScalar(camera.position.distanceTo(bounds.center));
+    target = camera.position.clone().add(ahead);
+  }
+  return { camera, target };
+}
+
+/**
  * Draw a model and its Ghosts through the normalization shader. Models are at
  * real-world scale, so placing them side by side unscaled shows the Ghosts at
  * true relative scale. With `orbit`, the player can orbit the model freely by
@@ -59,21 +89,7 @@ export function drawStage(
     scene.add(object);
   }
 
-  const bounds = new Box3().setFromObject(scene).getBoundingSphere(new Sphere());
-  const camera = new PerspectiveCamera(30, 1, 0.01, 100);
-  const distance = bounds.radius / Math.sin((camera.fov * Math.PI) / 360);
-  camera.position.copy(bounds.center).add(new Vector3(0, 0.45, 1).setLength(distance));
-  camera.lookAt(bounds.center);
-  let target = bounds.center;
-  const carried = orbit ? (model.getObjectByProperty('isCamera', true) as Camera | undefined) : undefined;
-  if (carried) {
-    scene.updateMatrixWorld();
-    carried.matrixWorld.decompose(camera.position, camera.quaternion, new Vector3());
-    if (carried instanceof PerspectiveCamera) camera.fov = carried.fov;
-    // Orbit about the point straight ahead as far away as the model's centre, so the first frame is the carried view.
-    const ahead = camera.getWorldDirection(new Vector3()).multiplyScalar(camera.position.distanceTo(bounds.center));
-    target = camera.position.clone().add(ahead);
-  }
+  const { camera, target } = stageCamera(scene, model, orbit);
 
   const renderer = new WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
