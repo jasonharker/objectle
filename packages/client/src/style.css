@@ -62,3 +62,7 @@ figure canvas {
 #guesses {
   text-align: left;
 }
+
+#ghosts canvas {
+  aspect-ratio: 2;
+}

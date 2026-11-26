@@ -1,8 +1,11 @@
 // Proves the client talks to the scoring API correctly, against the real API
 // run in-process by the seam-1 harness.
+import { Box3, Vector3, type Object3D } from 'three';
 import { describe, expect, test } from 'vitest';
 import { startApi } from '../../api/test/harness.ts';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from '../src/game.ts';
+import { loadModel } from '../src/model-loader.ts';
+import { hiddenDailyObject, scaleToLongestDimension } from '../src/stage-view.ts';
 
 async function apiFetch(now: string): Promise<typeof fetch> {
   const api = await startApi({ now });
@@ -78,6 +81,31 @@ test('resumes the stored game after a reload', async () => {
   const resumed = await startGame(fetch, storage);
 
   expect(resumed).toEqual(played);
+});
+
+test('a wrong Guess comes back with its Feedback, which a reload keeps', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  await startGame(fetch, storage);
+  const played = await submitGuess(fetch, storage, 'wooden spoon');
+
+  expect(played.wrongGuesses.map(({ guess, feedback }) => [guess, feedback])).toEqual([
+    ['wooden spoon', { category: 'no match', size: 'smaller', naturalOrMade: 'no match', primaryMaterial: 'match' }],
+  ]);
+  expect((await startGame(fetch, storage)).wrongGuesses).toEqual(played.wrongGuesses);
+});
+
+test('a Ghost loads at true relative scale beside the hidden Daily Object', async () => {
+  const fetch = await apiFetch(day2);
+  const storage = memoryStorage();
+  await startGame(fetch, storage);
+  const { wrongGuesses } = await submitGuess(fetch, storage, 'wooden spoon');
+  const { ghost } = wrongGuesses[0];
+
+  const model = scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize);
+
+  const longest = (object: Object3D) => Math.max(...new Box3().setFromObject(object).getSize(new Vector3()).toArray());
+  expect(longest(model) / longest(hiddenDailyObject())).toBeCloseTo(ghost.relativeSize, 6);
 });
 
 test('a refused Guess says why and keeps the Play Token', async () => {

@@ -1,5 +1,7 @@
-import type { GameResponse } from '@objectle/shared';
+import type { Feedback, GameResponse, WrongGuess } from '@objectle/shared';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from './game.ts';
+import { loadModel } from './model-loader.ts';
+import { drawStage, hiddenDailyObject, scaleToLongestDimension } from './stage-view.ts';
 
 const puzzleNumber = document.querySelector('#puzzle-number')!;
 const revealStage = document.querySelector('#reveal-stage')!;
@@ -10,9 +12,35 @@ const guessInput = document.querySelector<HTMLInputElement>('#guess')!;
 const guessButton = guessForm.querySelector('button')!;
 const suggestions = document.querySelector('#guess-vocabulary')!;
 const guessList = document.querySelector('#guesses')!;
+const ghostView = document.querySelector<HTMLElement>('#ghosts')!;
 
 let names: string[] = [];
 let current: GameResponse | undefined;
+let drawnGhosts = 0;
+
+const sizeText: Record<Feedback['size'], string> = {
+  bigger: 'the Daily Object is bigger',
+  smaller: 'the Daily Object is smaller',
+  similar: 'similar',
+};
+
+function feedbackText({ category, size, naturalOrMade, primaryMaterial }: Feedback): string {
+  return `Category: ${category} · Size: ${sizeText[size]} · Natural vs. made: ${naturalOrMade} · Primary Material: ${primaryMaterial}`;
+}
+
+/** Draw the Ghosts beside the hidden Daily Object, in units of its Size. */
+async function drawGhosts(wrongGuesses: WrongGuess[]) {
+  drawnGhosts = wrongGuesses.length;
+  ghostView.hidden = wrongGuesses.length === 0;
+  if (wrongGuesses.length === 0) return ghostView.replaceChildren();
+  const ghosts = await Promise.all(
+    wrongGuesses.map(async ({ ghost }) => scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize)),
+  );
+  if (drawnGhosts !== wrongGuesses.length) return; // a later Guess is being drawn
+  const canvas = document.createElement('canvas');
+  ghostView.replaceChildren(canvas);
+  drawStage(canvas, hiddenDailyObject(), ghosts);
+}
 
 function render(game: GameResponse) {
   const rolledOver = current !== undefined && current.puzzleNumber !== game.puzzleNumber;
@@ -30,10 +58,12 @@ function render(game: GameResponse) {
   guessList.replaceChildren(
     ...game.guesses.map((name) => {
       const item = document.createElement('li');
-      item.textContent = name;
+      const wrong = game.wrongGuesses.find(({ guess }) => guess === name);
+      item.textContent = wrong ? `${name}: ${feedbackText(wrong.feedback)}` : name;
       return item;
     }),
   );
+  if (game.wrongGuesses.length !== drawnGhosts) drawGhosts(game.wrongGuesses).catch(showError);
   guessForm.hidden = game.result !== null;
   if (game.result === null) {
     message.textContent = rolledOver ? `A new Puzzle Number has started: #${game.puzzleNumber}.` : '';
