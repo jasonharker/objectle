@@ -11,7 +11,8 @@
     "typecheck": "tsc",
     "build": "pnpm --filter @objectle/client build",
     "start": "node packages/api/src/server.ts",
-    "curate": "node packages/curation/src/cli.ts"
+    "curate": "node packages/curation/src/cli.ts",
+    "prepare-model": "node packages/curation/src/prepare-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

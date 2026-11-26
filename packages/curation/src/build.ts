@@ -5,10 +5,11 @@
 // A content directory holds the curation input files below plus the model and
 // stage asset files they name, by paths relative to the directory. Answer Pool
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
-// its asset files as given; rendering them from Stage Cameras (ADR-0006) is
-// later work. schedule.json is the previously published Schedule: the bundle's
-// schedule, copied back when it is published. The build extends it around the
-// Pins in pins.json ({ date, noun }, by Pacific date) by ADR-0007.
+// its asset files as given, checked against the ADR-0006 stage asset format;
+// rendering them from Stage Cameras is later work. schedule.json is the
+// previously published Schedule: the bundle's schedule, copied back when it is
+// published. The build extends it around the Pins in pins.json ({ date, noun },
+// by Pacific date) by ADR-0007.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
@@ -22,6 +23,7 @@ import {
   type GuessVocabularyEntry,
   type ScheduleEntry,
 } from '@objectle/shared';
+import { stageAssetProblems } from '@objectle/shared/stage-assets';
 import { dayOf, pacificDateAt, planSchedule } from './schedule.ts';
 
 export const inputFiles = {
@@ -55,12 +57,12 @@ const isMissing = (value: unknown) => value === undefined || value === null;
 const oneOf = <T extends string>(set: readonly T[], value: unknown): value is T => set.includes(value as T);
 
 /** Whether a path names a file inside the content directory, so it lands inside the bundle directory too. */
-function staysInside(path: string): boolean {
+export function staysInside(path: string): boolean {
   const normalized = normalize(path);
   return !isAbsolute(path) && normalized !== '..' && !normalized.startsWith(`..${sep}`);
 }
 
-async function readInput(contentDir: string, file: string, problems: string[]): Promise<unknown[] | undefined> {
+export async function readInput(contentDir: string, file: string, problems: string[]): Promise<unknown[] | undefined> {
   let text: string;
   try {
     text = await readFile(join(contentDir, file), 'utf8');
@@ -80,6 +82,15 @@ async function readInput(contentDir: string, file: string, problems: string[]): 
     return undefined;
   }
   return value;
+}
+
+/** Why a noun's Credit can't be shown, if it can't: every model needs an author, source and license. */
+export function creditProblems(credit: unknown, label: string): string[] {
+  if (isMissing(credit)) return [`${label} has no Credit`];
+  if (!isObject(credit)) return [`${label} has a Credit that is not an author, source and license`];
+  return ['author', 'source', 'license'].flatMap((field) =>
+    isText(credit[field]) ? [] : [`${label} has a Credit with no ${field}`],
+  );
 }
 
 /**
@@ -133,6 +144,8 @@ export async function buildContent(
 
   const guessVocabulary: GuessVocabularyEntry[] = [];
   const names = new Set<string>();
+  /** Model paths by the hash of their bytes: a stage asset with a model's bytes would match its Ghost. */
+  const modelsByHash = new Map<string, string>();
   for (const [index, entry] of (vocabularyInput ?? []).entries()) {
     if (!isObject(entry) || !isText(entry.name)) {
       problems.push(`Guess Vocabulary entry ${index + 1} has no name`);
@@ -144,7 +157,10 @@ export async function buildContent(
     names.add(name);
 
     if (isMissing(model)) problems.push(`${label} has no model`);
-    else await check(model, 'model', label);
+    else {
+      const bytes = await check(model, 'model', label);
+      if (bytes !== undefined) modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+    }
 
     if (isMissing(category)) problems.push(`${label} has no Category`);
     else if (!oneOf(categories, category)) {
@@ -166,13 +182,7 @@ export async function buildContent(
       problems.push(`${label} has Primary Material ${JSON.stringify(primaryMaterial)}, which is not a Primary Material`);
     }
 
-    if (isMissing(credit)) problems.push(`${label} has no Credit`);
-    else if (!isObject(credit)) problems.push(`${label} has a Credit that is not an author, source and license`);
-    else {
-      for (const field of ['author', 'source', 'license']) {
-        if (!isText(credit[field])) problems.push(`${label} has a Credit with no ${field}`);
-      }
-    }
+    problems.push(...creditProblems(credit, label));
 
     guessVocabulary.push({
       name,
@@ -214,7 +224,16 @@ export async function buildContent(
         for (const asset of assets) {
           const bytes = await check(asset, 'asset', stageLabel);
           if (bytes === undefined) continue;
+          for (const problem of stageAssetProblems(stageIndex + 1, bytes)) {
+            problems.push(`${stageLabel} has asset ${asset as string}, which ${problem}`);
+          }
           const hash = createHash('sha256').update(bytes).digest('hex');
+          const model = modelsByHash.get(hash);
+          if (model !== undefined) {
+            problems.push(
+              `${stageLabel} has asset ${asset as string}, whose bytes are the same as the model ${model}'s, which a Ghost would match`,
+            );
+          }
           const other = stageAssetsByHash.get(hash);
           if (other !== undefined && other !== asset) {
             problems.push(`${stageLabel} has asset ${asset as string}, whose bytes are the same as ${other}'s`);

@@ -2,7 +2,7 @@ import type { Object3D } from 'three';
 import type { Feedback, GameResponse, WrongGuess } from '@objectle/shared';
 import { creditItem } from './credit.ts';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from './game.ts';
-import { loadModel, modelMediaType } from './model-loader.ts';
+import { dailyObjectModel, loadModel, modelMediaType } from './model-loader.ts';
 import { drawStage, hiddenDailyObject, scaleToLongestDimension } from './stage-view.ts';
 
 const puzzleNumber = document.querySelector('#puzzle-number')!;
@@ -19,7 +19,8 @@ const endSection = document.querySelector<HTMLElement>('#end-of-game')!;
 
 let names: string[] = [];
 let current: GameResponse | undefined;
-let drawnGhosts = 0;
+/** What the Ghost view last drew: how many Ghosts, beside which Daily Object model, if any. */
+let drawnGhosts = '';
 /** Counts Ghost draws, so a draw that finishes after a later one began does not paint. */
 let ghostDraw = 0;
 /** Releases the current Ghost drawing, if there is one. */
@@ -39,27 +40,38 @@ function feedbackText({ category, size, naturalOrMade, primaryMaterial }: Feedba
   return `Category: ${category} · Size: ${sizeText[size]} · Natural vs. made: ${naturalOrMade} · Primary Material: ${primaryMaterial}`;
 }
 
-/** Draw the Ghosts beside the hidden Daily Object, in units of its Size. */
-async function drawGhosts(wrongGuesses: WrongGuess[]) {
-  drawnGhosts = wrongGuesses.length;
+/**
+ * Draw the Ghosts beside the Daily Object, in units of its Size: the hidden
+ * ball, or its model once that is disclosed, which is shown even beside no Ghosts.
+ */
+async function drawGhosts(wrongGuesses: WrongGuess[], modelUrl: string | undefined) {
+  drawnGhosts = `${wrongGuesses.length} ${modelUrl}`;
   const draw = ++ghostDraw;
-  ghostView.hidden = wrongGuesses.length === 0;
-  if (wrongGuesses.length === 0) {
+  ghostView.hidden = wrongGuesses.length === 0 && modelUrl === undefined;
+  if (ghostView.hidden) {
     disposeGhosts();
     disposeGhosts = () => {};
     return ghostView.replaceChildren();
   }
-  const ghosts = await Promise.all(
-    wrongGuesses.map(async ({ ghost }) => scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize)),
-  );
+  const [dailyObject, ...ghosts] = await Promise.all([
+    modelUrl === undefined
+      ? hiddenDailyObject()
+      : loadModel(fetch, modelUrl).then((model) => scaleToLongestDimension(model, 1)),
+    ...wrongGuesses.map(async ({ ghost }) =>
+      scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize),
+    ),
+  ]);
   if (draw !== ghostDraw) return; // a later Guess, or another game, is being drawn
   const canvas = document.createElement('canvas');
   disposeGhosts();
   ghostView.replaceChildren(canvas);
-  disposeGhosts = drawStage(canvas, hiddenDailyObject(), ghosts);
+  disposeGhosts = drawStage(canvas, dailyObject, ghosts);
 }
 
-/** Show a Reveal Stage's assets: images as they are, models through the normalization shader. */
+/**
+ * Show a Reveal Stage's assets: images as they are (pre-rendered through the
+ * normalization shader, ADR-0006), models through the shader with free orbit.
+ */
 async function drawRevealStage({ revealStage, stageAssets }: GameResponse) {
   const draw = ++stageDraw;
   const assets = await Promise.all(
@@ -82,7 +94,7 @@ async function drawRevealStage({ revealStage, stageAssets }: GameResponse) {
       return canvas;
     }),
   );
-  const disposers = [...models].map(([canvas, model]) => drawStage(canvas, model));
+  const disposers = [...models].map(([canvas, model]) => drawStage(canvas, model, [], { orbit: true }));
   disposeStage = () => disposers.forEach((dispose) => dispose());
 }
 
@@ -91,6 +103,7 @@ function render(game: GameResponse) {
   current = game;
   puzzleNumber.textContent = `#${game.puzzleNumber}`;
   revealStage.textContent = `Reveal Stage ${game.revealStage} of 6`;
+  if (game.firstLetter !== null) revealStage.textContent += ` · First letter: ${game.firstLetter.toUpperCase()}`;
   drawRevealStage(game).catch(showError);
   guessList.replaceChildren(
     ...game.guesses.map((name) => {
@@ -100,7 +113,8 @@ function render(game: GameResponse) {
       return item;
     }),
   );
-  if (game.wrongGuesses.length !== drawnGhosts) drawGhosts(game.wrongGuesses).catch(showError);
+  const modelUrl = dailyObjectModel(game);
+  if (`${game.wrongGuesses.length} ${modelUrl}` !== drawnGhosts) drawGhosts(game.wrongGuesses, modelUrl).catch(showError);
   guessForm.hidden = game.result !== null;
   if (game.result === null) {
     message.textContent = rolledOver ? `A new Puzzle Number has started: #${game.puzzleNumber}.` : '';

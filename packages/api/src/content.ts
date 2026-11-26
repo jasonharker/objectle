@@ -2,14 +2,16 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { revealStageCount, type ContentBundle, type GuessVocabularyEntry } from '@objectle/shared';
+import { stageAssetProblems } from '@objectle/shared/stage-assets';
 
 export { revealStageCount };
 
 /** A Reveal Stage asset, indexed at startup; its bytes stay on disk until it is requested. */
 export interface StageAsset {
   /**
-   * The SHA-256 of the asset's bytes, so neither its URL nor its payload
-   * carries the noun or the bundle's file name.
+   * The SHA-256 of the asset's bytes, so nothing derived from it carries the
+   * noun or the bundle's file name. A Ghost model's URL is this id; a Reveal
+   * Stage asset's is keyed by the API (ADR-0006).
    */
   id: string;
   mediaType: string;
@@ -34,15 +36,19 @@ export interface Content {
   modelById(id: string): StageAsset | undefined;
 }
 
-const mediaTypes: Record<string, string> = { '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary' };
+const mediaTypes: Record<string, string> = { '.webp': 'image/webp', '.glb': 'model/gltf-binary' };
+
+function asset(file: string, bytes: Buffer): StageAsset {
+  return {
+    id: createHash('sha256').update(bytes).digest('hex'),
+    mediaType: mediaTypes[extname(file)] ?? 'application/octet-stream',
+    file,
+  };
+}
 
 async function indexAsset(dir: string, path: string): Promise<StageAsset> {
   const file = join(dir, path);
-  return {
-    id: createHash('sha256').update(await readFile(file)).digest('hex'),
-    mediaType: mediaTypes[extname(path)] ?? 'application/octet-stream',
-    file,
-  };
+  return asset(file, await readFile(file));
 }
 
 /**
@@ -58,14 +64,20 @@ export async function loadContent(
 ): Promise<Content> {
   const bundle: ContentBundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
 
+  const problems: string[] = [];
   const assetsByPath = new Map<string, StageAsset>();
   const stagesByNoun = new Map<string, StageAsset[][]>();
   for (const entry of bundle.answerPool) {
     const stages: StageAsset[][] = [];
-    for (const stage of entry.revealStages) {
+    for (const [index, stage] of entry.revealStages.entries()) {
       const assets: StageAsset[] = [];
       for (const path of stage.assets) {
-        if (!assetsByPath.has(path)) assetsByPath.set(path, await indexAsset(dir, path));
+        const file = join(dir, path);
+        const bytes = await readFile(file);
+        for (const problem of stageAssetProblems(index + 1, bytes)) {
+          problems.push(`Answer Pool noun "${entry.noun}" Reveal Stage ${index + 1} asset ${path} ${problem}`);
+        }
+        if (!assetsByPath.has(path)) assetsByPath.set(path, asset(file, bytes));
         assets.push(assetsByPath.get(path)!);
       }
       stages.push(assets);
@@ -73,7 +85,6 @@ export async function loadContent(
     stagesByNoun.set(entry.noun, stages);
   }
 
-  const problems: string[] = [];
   const models = new Map<string, StageAsset>();
   for (const { name, model, size } of bundle.guessVocabulary) {
     if (!(size > 0)) problems.push(`Guess Vocabulary noun "${name}" has Size ${size}, which is not positive`);
@@ -103,10 +114,16 @@ export async function loadContent(
     }
   }
   const pathById = new Map<string, string>();
+  const modelPathById = new Map(bundle.guessVocabulary.map(({ name, model }) => [models.get(name)?.id, model]));
   for (const [path, { id }] of assetsByPath) {
     const other = pathById.get(id);
     if (other !== undefined) problems.push(`stage assets ${other} and ${path} have the same asset id`);
     pathById.set(id, path);
+    // Ghosts are served with their names, so a stage asset with a model's bytes names the Daily Object (ADR-0006).
+    const model = modelPathById.get(id);
+    if (model !== undefined) {
+      problems.push(`stage asset ${path} has the same bytes as the Guess Vocabulary model ${model}, which a Ghost would match`);
+    }
   }
   if (problems.length > 0) throw new Error(`invalid content bundle in ${dir}:\n${problems.join('\n')}`);
 
