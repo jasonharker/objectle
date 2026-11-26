@@ -23,7 +23,7 @@ One of six fixed steps of increasing disclosure of the Daily Object, alternating
 _Avoid_: hint, level, step, clue
 
 **Guess**:
-A player's attempt to name the Daily Object, chosen from the Guess Vocabulary; each wrong Guess advances one Reveal Stage.
+A player's attempt to name the Daily Object, chosen from the Guess Vocabulary; each wrong Guess advances one Reveal Stage, and a noun the player already guessed is refused without counting as a Guess.
 _Avoid_: try, attempt, answer
 
 ### Nouns and their data
@@ -43,6 +43,10 @@ _Avoid_: trait, property, tag, feature
 **Category**:
 The Attribute naming what a noun is mainly for; every noun has exactly one, decided by its primary purpose.
 _Avoid_: type, kind, room, section
+
+**Size**:
+The Attribute giving the longest dimension, in metres, of a typical example of a noun; a Ghost is drawn so its longest dimension matches it.
+_Avoid_: volume, height, scale
 
 **Primary Material**:
 The Attribute naming the material that covers the largest visible surface of a typical example of a noun (its classic, iconic form where old and modern forms differ), not what it is best known for being made of; a material is named by what it looks like, so a carbon-fibre frame counts as plastic; a screen counts as part of its device's plastic body, not as glass.
@@ -89,9 +93,9 @@ The per-Attribute comparison returned for a wrong Guess against the Daily Object
 _Avoid_: hint, clue, score
 
 **Distribution**:
-The count of each Result among all players who finished one Puzzle Number.
+The count of each Result among all players who have finished one Puzzle Number so far.
 _Avoid_: stats, histogram, leaderboard
 
 **Beat Percentage**:
-The share of other finished players of the same Puzzle Number whose Result was worse than the player's, with players on the same Result counting half.
+The share of other players who have finished the same Puzzle Number so far whose Result was worse than the player's, with players on the same Result counting half; while no other player has finished there is none, and the player is the first to finish.
 _Avoid_: percentile, rank
