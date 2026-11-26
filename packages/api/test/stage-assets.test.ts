@@ -40,6 +40,20 @@ describe('A new game', () => {
     expect(asset.body).toBe(edited);
   });
 
+  test('says each stage asset’s media type, so the client knows a model from an image', async () => {
+    const contentDir = await copyFixture();
+    const bundle = await fixtureBundle();
+    bundle.answerPool.find((entry) => entry.noun === 'teapot')!.revealStages[0].assets.push('models/teapot.glb');
+    await writeFile(join(contentDir, 'bundle.json'), JSON.stringify(bundle));
+
+    const { response } = await startGame({ now: days[0], contentDir });
+
+    expect(response.json<GameResponse>().stageAssets.map(({ mediaType }) => mediaType)).toEqual([
+      'image/svg+xml',
+      'model/gltf-binary',
+    ]);
+  });
+
   test('keeps serving a game’s stage assets across midnight Pacific rollover', async () => {
     // 2027-03-02T08:00Z is midnight Pacific (PST) between Puzzle Numbers 1 and 2.
     let now = '2027-03-02T07:59:59Z';

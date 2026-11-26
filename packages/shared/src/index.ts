@@ -50,6 +50,8 @@ export interface ContentBundle {
 
 export interface StageAsset {
   url: string;
+  /** Tells the client whether to draw the asset as a model or show it as an image. */
+  mediaType: string;
 }
 
 /** How a game ended: solved at a Reveal Stage, or failed after six Guesses. */

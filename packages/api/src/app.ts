@@ -145,7 +145,7 @@ export function buildApp({
       playToken: signPlayToken(progress, signingKey),
       puzzleNumber: progress.puzzleNumber,
       revealStage,
-      stageAssets: assets.map(({ id }) => ({ url: `/api/stage-assets/${id}` })),
+      stageAssets: assets.map(({ id, mediaType }) => ({ url: `/api/stage-assets/${id}`, mediaType })),
       guesses: progress.guesses,
       result,
       wrongGuesses: wrongGuesses(progress),

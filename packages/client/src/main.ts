@@ -1,7 +1,8 @@
+import type { Object3D } from 'three';
 import type { Feedback, GameResponse, WrongGuess } from '@objectle/shared';
 import { creditItem } from './credit.ts';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from './game.ts';
-import { loadModel } from './model-loader.ts';
+import { loadModel, modelMediaType } from './model-loader.ts';
 import { drawStage, hiddenDailyObject, scaleToLongestDimension } from './stage-view.ts';
 
 const puzzleNumber = document.querySelector('#puzzle-number')!;
@@ -23,6 +24,10 @@ let drawnGhosts = 0;
 let ghostDraw = 0;
 /** Releases the current Ghost drawing, if there is one. */
 let disposeGhosts = () => {};
+/** Counts Reveal Stage draws, so a draw that finishes after a later one began does not paint. */
+let stageDraw = 0;
+/** Releases the current Reveal Stage's model drawings, if there are any. */
+let disposeStage = () => {};
 
 const sizeText: Record<Feedback['size'], string> = {
   bigger: 'the Daily Object is bigger',
@@ -54,19 +59,39 @@ async function drawGhosts(wrongGuesses: WrongGuess[]) {
   disposeGhosts = drawStage(canvas, hiddenDailyObject(), ghosts);
 }
 
+/** Show a Reveal Stage's assets: images as they are, models through the normalization shader. */
+async function drawRevealStage({ revealStage, stageAssets }: GameResponse) {
+  const draw = ++stageDraw;
+  const assets = await Promise.all(
+    stageAssets.map(async ({ url, mediaType }) => {
+      if (mediaType === modelMediaType) return loadModel(fetch, url);
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = `Reveal Stage ${revealStage}`;
+      return img;
+    }),
+  );
+  if (draw !== stageDraw) return; // a later Guess, or another game, is being drawn
+  disposeStage();
+  const models = new Map<HTMLCanvasElement, Object3D>();
+  stage.replaceChildren(
+    ...assets.map((asset) => {
+      if (asset instanceof HTMLImageElement) return asset;
+      const canvas = document.createElement('canvas');
+      models.set(canvas, asset);
+      return canvas;
+    }),
+  );
+  const disposers = [...models].map(([canvas, model]) => drawStage(canvas, model));
+  disposeStage = () => disposers.forEach((dispose) => dispose());
+}
+
 function render(game: GameResponse) {
   const rolledOver = current !== undefined && current.puzzleNumber !== game.puzzleNumber;
   current = game;
   puzzleNumber.textContent = `#${game.puzzleNumber}`;
   revealStage.textContent = `Reveal Stage ${game.revealStage} of 6`;
-  stage.replaceChildren(
-    ...game.stageAssets.map((asset) => {
-      const img = document.createElement('img');
-      img.src = asset.url;
-      img.alt = `Reveal Stage ${game.revealStage}`;
-      return img;
-    }),
-  );
+  drawRevealStage(game).catch(showError);
   guessList.replaceChildren(
     ...game.guesses.map((name) => {
       const item = document.createElement('li');
