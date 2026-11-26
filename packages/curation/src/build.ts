@@ -6,8 +6,9 @@
 // stage asset files they name, by paths relative to the directory. Answer Pool
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
 // its asset files as given; rendering them from Stage Cameras (ADR-0006) is
-// later work. schedule.json is carried into the bundle as written; generating
-// it around Pins is #13.
+// later work. schedule.json is the previously published Schedule: the bundle's
+// schedule, copied back when it is published. The build extends it around the
+// Pins in pins.json ({ date, noun }, by Pacific date) by ADR-0007.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
@@ -21,12 +22,30 @@ import {
   type GuessVocabularyEntry,
   type ScheduleEntry,
 } from '@objectle/shared';
+import { dayOf, pacificDateAt, planSchedule } from './schedule.ts';
 
 export const inputFiles = {
   guessVocabulary: 'guess-vocabulary.json',
   answerPool: 'answer-pool.json',
+  pins: 'pins.json',
   schedule: 'schedule.json',
 } as const;
+
+export interface BuildOptions {
+  /** Pacific date of Puzzle Number 1, YYYY-MM-DD. */
+  launchDate: string;
+  /** The instant the build runs at, which decides the active Puzzle Number. */
+  now: Date;
+  /** Mixed into the shuffle that breaks ties between equally eligible objects. */
+  seed?: string;
+}
+
+export interface BuildResult {
+  /** Every content problem found; when there are any, nothing is written. */
+  problems: string[];
+  /** What a passing build reports: a Schedule shortfall and each Difficulty Pattern substitution. */
+  notices: string[];
+}
 
 type Json = Record<string, unknown>;
 
@@ -65,10 +84,15 @@ async function readInput(contentDir: string, file: string, problems: string[]): 
 
 /**
  * Build the content bundle for `contentDir` into `bundleDir`: bundle.json
- * plus a copy of every model and stage asset it names. Returns every problem
- * found; when there are any, nothing is written.
+ * plus a copy of every model and stage asset it names, with the Schedule
+ * extended as of `now`. Returns every problem found; when there are any,
+ * nothing is written.
  */
-export async function buildContent(contentDir: string, bundleDir: string): Promise<string[]> {
+export async function buildContent(
+  contentDir: string,
+  bundleDir: string,
+  { launchDate, now, seed = '' }: BuildOptions,
+): Promise<BuildResult> {
   const problems: string[] = [];
   try {
     if ((await readdir(bundleDir)).length > 0) problems.push(`bundle directory ${bundleDir} is not empty`);
@@ -80,6 +104,7 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
 
   const vocabularyInput = await readInput(contentDir, inputFiles.guessVocabulary, problems);
   const answerPoolInput = await readInput(contentDir, inputFiles.answerPool, problems);
+  const pinsInput = await readInput(contentDir, inputFiles.pins, problems);
   const scheduleInput = await readInput(contentDir, inputFiles.schedule, problems);
 
   /** Every file the bundle names, so each is copied once. */
@@ -210,7 +235,16 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
     answerPool.push({ noun, revealStages: stages, difficultyRating } as AnswerPoolEntry);
   }
 
-  const schedule: ScheduleEntry[] = [];
+  const launchDay = dayOf(launchDate);
+  if (launchDay === undefined) problems.push(`Launch Date ${JSON.stringify(launchDate)} is not a YYYY-MM-DD date`);
+  if (Number.isNaN(now.getTime())) problems.push('the build was given no valid instant to run at');
+  /** The active Puzzle Number; 0 or less before launch. */
+  const active =
+    launchDay === undefined || Number.isNaN(now.getTime()) ? NaN : dayOf(pacificDateAt(now))! - launchDay + 1;
+
+  // A past Puzzle Number may name a noun that has since left the Answer Pool;
+  // the active one may not, as it can never be reassigned (ADR-0007).
+  const previous: ScheduleEntry[] = [];
   const puzzleNumbers = new Set<number>();
   for (const [index, entry] of (scheduleInput ?? []).entries()) {
     const puzzleNumber = isObject(entry) ? entry.puzzleNumber : undefined;
@@ -222,15 +256,52 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
     }
     if (puzzleNumbers.has(puzzleNumber)) problems.push(`Puzzle Number ${puzzleNumber} is scheduled more than once`);
     puzzleNumbers.add(puzzleNumber);
-    if (answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun as string)) {
+    if (!isText(entry.noun)) problems.push(`Puzzle Number ${puzzleNumber} is scheduled to no noun`);
+    else if (puzzleNumber === active && answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun)) {
       problems.push(
-        `Puzzle Number ${puzzleNumber} is scheduled to ${JSON.stringify(entry.noun)}, which is not in the Answer Pool`,
+        `Puzzle Number ${puzzleNumber} is active and scheduled to ${JSON.stringify(entry.noun)}, which is not in the ` +
+          'Answer Pool; an active Puzzle Number is never reassigned',
       );
     }
-    schedule.push({ puzzleNumber, noun: entry.noun as string, pinned: entry.pinned === true });
+    previous.push({ puzzleNumber, noun: entry.noun as string, pinned: entry.pinned === true });
   }
 
-  if (problems.length > 0) return problems;
+  /** Pinned nouns by Puzzle Number. */
+  const pins = new Map<number, string>();
+  /** Every Pin's date, so a date Pinned twice is reported once. */
+  const pinDates = new Set<string>();
+  for (const [index, entry] of (pinsInput ?? []).entries()) {
+    const date = isObject(entry) ? entry.date : undefined;
+    const day = dayOf(date);
+    if (!isObject(entry) || day === undefined) {
+      problems.push(`Pin ${index + 1} has date ${JSON.stringify(date)}, which is not a YYYY-MM-DD date`);
+      continue;
+    }
+    const label = `Pin on ${date as string}`;
+    if (pinDates.has(date as string)) problems.push(`${date as string} has more than one Pin`);
+    pinDates.add(date as string);
+    if (!isText(entry.noun)) problems.push(`${label} has no noun`);
+    else if (answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun)) {
+      problems.push(`${label} is to ${JSON.stringify(entry.noun)}, which is not in the Answer Pool`);
+    }
+    if (launchDay === undefined || Number.isNaN(active)) continue;
+    const puzzleNumber = day - launchDay + 1;
+    if (puzzleNumber < 1) problems.push(`${label} is before the Launch Date`);
+    else if (puzzleNumber < active) problems.push(`${label} is on a past date (Puzzle Number ${puzzleNumber})`);
+    else if (puzzleNumber === active) problems.push(`${label} is on the active date (Puzzle Number ${puzzleNumber})`);
+    pins.set(puzzleNumber, entry.noun as string);
+  }
+
+  if (problems.length > 0) return { problems, notices: [] };
+
+  const { schedule, notices } = planSchedule({
+    answerPool: new Map(answerPool.map(({ noun, difficultyRating }) => [noun, difficultyRating])),
+    pins,
+    previous,
+    active,
+    launchDay: launchDay!,
+    seed,
+  });
 
   await mkdir(bundleDir, { recursive: true });
   for (const file of files) {
@@ -240,5 +311,5 @@ export async function buildContent(contentDir: string, bundleDir: string): Promi
   const bundle: ContentBundle = { guessVocabulary, answerPool, schedule };
   // Written last, so a build that dies part-way leaves no bundle the API would load.
   await writeFile(join(bundleDir, 'bundle.json'), `${JSON.stringify(bundle, null, 2)}\n`);
-  return [];
+  return { problems: [], notices };
 }
