@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -12,9 +13,10 @@ import type {
   GuessVocabularyResponse,
   ModelCredit,
   Result,
+  StageAsset,
   WrongGuess,
 } from '@objectle/shared';
-import { revealStageCount, type Content } from './content.ts';
+import { revealStageCount, type Content, type StageAsset as BundledAsset } from './content.ts';
 import { feedback } from './feedback.ts';
 import { signPlayToken, verifyPlayToken, type Progress } from './play-token.ts';
 import { puzzleNumberAt } from './puzzle-clock.ts';
@@ -74,6 +76,15 @@ export function buildApp({
   const creditByName = new Map(content.bundle.guessVocabulary.map(({ name, credit }) => [name, credit]));
   const modelCredit = (name: string): ModelCredit => ({ name, credit: creditByName.get(name)! });
   const credits: CreditsResponse = { credits: [...vocabulary].sort().map(modelCredit) };
+
+  // A stage asset's public id is a keyed hash of the Puzzle Number and its
+  // bytes (ADR-0006): when an Answer Pool object recurs its assets get new
+  // URLs, and nobody without the key can name an asset from bytes they kept.
+  const assetIdKey = createHmac('sha256', signingKey).update('objectle stage asset ids').digest();
+  const publicAssetId = (puzzleNumber: number, { id }: BundledAsset) =>
+    createHmac('sha256', assetIdKey).update(`${puzzleNumber} ${id}`).digest('hex');
+  const stageAssets = (puzzleNumber: number, assets: BundledAsset[]): StageAsset[] =>
+    assets.map((asset) => ({ url: `/api/stage-assets/${publicAssetId(puzzleNumber, asset)}`, mediaType: asset.mediaType }));
 
   /**
    * The progress a Play Token records, or undefined if it is not valid. A
@@ -145,7 +156,7 @@ export function buildApp({
       playToken: signPlayToken(progress, signingKey),
       puzzleNumber: progress.puzzleNumber,
       revealStage,
-      stageAssets: assets.map(({ id, mediaType }) => ({ url: `/api/stage-assets/${id}`, mediaType })),
+      stageAssets: stageAssets(progress.puzzleNumber, assets),
       guesses: progress.guesses,
       result,
       wrongGuesses: wrongGuesses(progress),
@@ -197,15 +208,19 @@ export function buildApp({
     return position(next, counted);
   });
 
-  // Asset ids are content hashes, so a later Reveal Stage's asset cannot be
+  // Asset ids are keyed hashes, so a later Reveal Stage's asset cannot be
   // fetched before a response has named it. A game started just before
   // midnight Pacific keeps its asset URLs after rollover, so the previous
   // Puzzle Number's assets are served too. A later Puzzle Number's never are.
   app.get<{ Params: { id: string } }>('/api/stage-assets/:id', async (request, reply) => {
     const active = puzzleNumberAt(clock(), launchDate);
     const asset = [active, active - 1]
-      .flatMap((puzzleNumber) => content.revealStages(puzzleNumber)?.flat() ?? [])
-      .find(({ id }) => id === request.params.id);
+      .flatMap((puzzleNumber) =>
+        (content.revealStages(puzzleNumber)?.flat() ?? []).filter(
+          (asset) => publicAssetId(puzzleNumber, asset) === request.params.id,
+        ),
+      )
+      .at(0);
     if (!asset) return reply.code(404).send({ error: 'No such stage asset.' });
     return reply.type(asset.mediaType).send(await readFile(asset.file));
   });

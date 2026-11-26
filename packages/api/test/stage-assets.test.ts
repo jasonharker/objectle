@@ -78,6 +78,23 @@ describe('A new game', () => {
     expect((await api.inject({ method: 'GET', url })).statusCode).toBe(404);
   });
 
+  test('gets new asset URLs when its Daily Object recurs, so an archive of past URLs cannot name it', async () => {
+    // The fixture schedules the teapot on Puzzle Numbers 1 and 3.
+    const first = (await startGame({ now: days[0] })).response.json<GameResponse>();
+    const { api, response } = await startGame({ now: days[2] });
+    const again = response.json<GameResponse>();
+
+    expect(again.stageAssets[0].url).not.toBe(first.stageAssets[0].url);
+    const asset = await api.inject({ method: 'GET', url: again.stageAssets[0].url });
+    expect(asset.rawPayload).toEqual(await readFile(join(fixtureDir, 'assets/teapot-stage-1.svg')));
+  });
+
+  test('names its assets with a keyed hash, which nobody without the key can compute from the bytes', async () => {
+    const game = (await startGame({ now: days[0] })).response.json<GameResponse>();
+    const other = (await startGame({ now: days[0], signingKey: 'another-signing-key-another-signing-key' })).response;
+    expect(other.json<GameResponse>().stageAssets[0].url).not.toBe(game.stageAssets[0].url);
+  });
+
   test('cannot fetch the next Daily Object’s stage asset, even a second before midnight', async () => {
     const tomorrow = (await startGame({ now: days[1] })).response.json<GameResponse>();
     const { api } = await startGame({ now: '2027-03-02T07:59:59Z' });

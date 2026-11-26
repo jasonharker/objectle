@@ -6,8 +6,9 @@ import type { ContentBundle, GuessVocabularyEntry } from '@objectle/shared';
 /** A Reveal Stage asset, indexed at startup; its bytes stay on disk until it is requested. */
 export interface StageAsset {
   /**
-   * The SHA-256 of the asset's bytes, so neither its URL nor its payload
-   * carries the noun or the bundle's file name.
+   * The SHA-256 of the asset's bytes, so nothing derived from it carries the
+   * noun or the bundle's file name. A Ghost model's URL is this id; a Reveal
+   * Stage asset's is keyed by the API (ADR-0006).
    */
   id: string;
   mediaType: string;
