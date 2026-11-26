@@ -41,7 +41,22 @@ One of four properties every Guess is scored against the Daily Object on: catego
 _Avoid_: trait, property, tag, feature
 
 **Category**:
-The Attribute naming what a noun is mainly for; every noun has exactly one, decided by its primary purpose.
+The Attribute naming what a noun is mainly for; every noun has exactly one, decided by its primary purpose, from these fourteen:
+- **Food & Drink**: eaten or drunk (apple, croissant).
+- **Cooking & Dining**: preparing, serving or eating food (kettle, frying pan, mug).
+- **Music**: making music (guitar, trumpet).
+- **Sport & Play**: sport, games and toys (basketball, chess set, skateboard).
+- **Tools & Repair**: making, building or fixing things (hammer, adjustable wrench).
+- **Gardening**: growing plants and keeping a garden (watering can, wheelbarrow).
+- **Office & Study**: paperwork, writing and reading (stapler, magnifying glass).
+- **Media & Computing**: capturing, showing or processing pictures, sound or data (camera, television, laptop).
+- **Home & Furniture**: furnishing and running a home, cleaning included (armchair, alarm clock).
+- **Clothing & Accessories**: worn as part of an outfit (sneaker, cowboy hat).
+- **Health & Personal Care**: looking after the body (toothbrush, thermometer).
+- **Transport**: moving people or goods from place to place (bicycle, motorcycle).
+- **Travel & Outdoors**: being out and about, whether for travel, weather, camping or the water (lantern, binoculars, umbrella, lifebuoy).
+- **Nature**: found rather than made, and not mainly used for anything (pinecone, seashell, feather).
+
 _Avoid_: type, kind, room, section
 
 **Size**:
@@ -49,7 +64,7 @@ The Attribute giving the longest dimension, in metres, of a typical example of a
 _Avoid_: volume, height, scale
 
 **Primary Material**:
-The Attribute naming the material that covers the largest visible surface of a typical example of a noun (its classic, iconic form where old and modern forms differ), not what it is best known for being made of; a material is named by what it looks like, so a carbon-fibre frame counts as plastic; a screen counts as part of its device's plastic body, not as glass.
+The Attribute naming the material that covers the largest visible surface of a typical example of a noun (its classic, iconic form where old and modern forms differ), not what it is best known for being made of; a material is named by what it looks like, so a carbon-fibre frame counts as plastic; a screen counts as part of its device's plastic body, not as glass. The material is one of eleven: organic, wood, metal, plastic, fabric, leather, glass, ceramic, rubber, paper (card included) or stone. Organic is living or once-living matter not processed into a material (peel, flesh, leaf, petal, feather, shell, bone); raw wood grain is wood, and rock is stone.
 _Avoid_: main material, made of, construction
 
 **Ghost**:
