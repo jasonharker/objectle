@@ -10,7 +10,8 @@
 // Cameras it records beside them, which the build ignores. schedule.json is the
 // previously published Schedule: the bundle's schedule, copied back when it is
 // published. The build extends it around the Pins in pins.json ({ date, noun },
-// by Pacific date) by ADR-0007.
+// by Pacific date) by ADR-0007; a Pin whose date has arrived matters only if
+// that Schedule did not honour it.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
@@ -301,7 +302,8 @@ export async function buildContent(
     previous.push({ puzzleNumber, noun: entry.noun as string, pinned: entry.pinned === true });
   }
 
-  /** Pinned nouns by Puzzle Number. */
+  const previousNouns = new Map(previous.map(({ puzzleNumber, noun }) => [puzzleNumber, noun]));
+  /** Pinned nouns by Puzzle Number, after the active one. */
   const pins = new Map<number, string>();
   /** Every Pin's date, so a date Pinned twice is reported once. */
   const pinDates = new Set<string>();
@@ -315,15 +317,22 @@ export async function buildContent(
     const label = `Pin on ${date as string}`;
     if (pinDates.has(date as string)) problems.push(`${date as string} has more than one Pin`);
     pinDates.add(date as string);
+    const puzzleNumber = launchDay === undefined || Number.isNaN(active) ? NaN : day - launchDay + 1;
+    // A Pin whose date has arrived is history once the previous Schedule
+    // honoured it: kept as published, whatever the Answer Pool now holds, and
+    // its Repeat Gap carried by that Schedule entry (ADR-0007).
+    if (puzzleNumber >= 1 && puzzleNumber <= active && previousNouns.get(puzzleNumber) === entry.noun) continue;
     if (!isText(entry.noun)) problems.push(`${label} has no noun`);
     else if (answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun)) {
       problems.push(`${label} is to ${JSON.stringify(entry.noun)}, which is not in the Answer Pool`);
     }
-    if (launchDay === undefined || Number.isNaN(active)) continue;
-    const puzzleNumber = day - launchDay + 1;
+    if (Number.isNaN(puzzleNumber)) continue;
+    const unhonoured =
+      `(Puzzle Number ${puzzleNumber}), but the previous Schedule does not assign ` +
+      `${JSON.stringify(entry.noun)} to it`;
     if (puzzleNumber < 1) problems.push(`${label} is before the Launch Date`);
-    else if (puzzleNumber < active) problems.push(`${label} is on a past date (Puzzle Number ${puzzleNumber})`);
-    else if (puzzleNumber === active) problems.push(`${label} is on the active date (Puzzle Number ${puzzleNumber})`);
+    else if (puzzleNumber < active) problems.push(`${label} is on a past date ${unhonoured}`);
+    else if (puzzleNumber === active) problems.push(`${label} is on the active date ${unhonoured}`);
     pins.set(puzzleNumber, entry.noun as string);
   }
 
