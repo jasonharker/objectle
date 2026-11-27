@@ -52,6 +52,7 @@ export function loadConfig(env: Env): Config {
 
   const port = tcpPort(env, 'PORT', '8080');
   const metricsPort = tcpPort(env, 'OBJECTLE_METRICS_PORT', '9464');
+  if (port === metricsPort) throw new Error(`PORT and OBJECTLE_METRICS_PORT must differ; both are ${port}`);
 
   return {
     signingKey,
