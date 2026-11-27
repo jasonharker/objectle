@@ -498,7 +498,10 @@ const plenty = [
 ];
 const ratingOf = new Map<string, string>([['teapot', 'easy'], ['pinecone', 'medium'], ...plenty]);
 
-describe.concurrent('The previously published Schedule', () => {
+// The Schedule tests below build a 105-object Answer Pool, often twice, so they
+// run one at a time: run concurrently on a one-CPU CI agent, several builds
+// share each test's timeout and pass it.
+describe('The previously published Schedule', () => {
   test('naming a noun outside the Answer Pool on the active Puzzle Number fails, naming both', async () => {
     expect(await problems((content) => (content.schedule[0].noun = 'wooden spoon'))).toMatch(
       /Puzzle Number 1 is active and scheduled to "wooden spoon", which is not in the Answer Pool/,
@@ -585,7 +588,7 @@ describe.concurrent('The previously published Schedule', () => {
   });
 });
 
-describe.concurrent('A Pin', () => {
+describe('A Pin', () => {
   test('keeps its date and is recorded as a Pin', async () => {
     const run = await curate(
       await contentDir((content) => content.pins.push({ date: dateOf(40), noun: 'teacup' }), [['teacup', 'hard']]),
@@ -704,7 +707,7 @@ describe.concurrent('A Pin', () => {
   });
 });
 
-describe.concurrent('Schedule generation', () => {
+describe('Schedule generation', () => {
   test('assigns every Puzzle Number through the Planning Horizon, 90 past the active one', async () => {
     const run = await curate(await contentDir(() => {}, plenty), { now: during(10) });
     expect(run.status, run.stderr).toBe(0);

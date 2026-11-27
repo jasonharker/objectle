@@ -214,7 +214,9 @@ const triangles = (doc: Document) =>
     .flatMap((mesh) => mesh.listPrimitives())
     .reduce((sum, primitive) => sum + (primitive.getIndices() ?? primitive.getAttribute('POSITION')!).getCount() / 3, 0);
 
-describe.concurrent('A prepared model', () => {
+// One at a time: each test prepares a model and some run the curation build, so
+// run concurrently on a one-CPU CI agent they share each test's timeout and pass it.
+describe('A prepared model', () => {
   test('loads in the game at its Size, standing on the origin', async () => {
     const dir = await contentDir();
     const result = await prepare(dir, 'teapot', await writeSource(sourceTeapot()));
@@ -320,7 +322,7 @@ describe.concurrent('A prepared model', () => {
   });
 });
 
-describe.concurrent('Asset preparation refuses', () => {
+describe('Asset preparation refuses', () => {
   /** Prepare the teapot into a content directory, expecting failure; returns the listed problems. */
   async function refused(guessVocabulary: Json[], source?: string): Promise<string> {
     const dir = await contentDir(guessVocabulary);
