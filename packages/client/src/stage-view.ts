@@ -14,6 +14,21 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { normalizeModel } from '@objectle/shared/shader';
 
+let swatch: CanvasRenderingContext2D | undefined;
+
+/**
+ * A colour token of style.css, read from the page, as the 0xRRGGBB sRGB three.js
+ * takes. The browser resolves it, painted on a 1×1 sRGB canvas, since the built
+ * CSS may hold the token as hex or lab() rather than as written.
+ */
+function tokenColour(name: string): number {
+  swatch ??= Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })!;
+  swatch.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name);
+  swatch.fillRect(0, 0, 1, 1);
+  const [r, g, b] = swatch.getImageData(0, 0, 1, 1).data;
+  return (r << 16) | (g << 8) | b;
+}
+
 /** Scale a model so its longest dimension is `length`. */
 export function scaleToLongestDimension(object: Object3D, length: number): Object3D {
   const size = new Box3().setFromObject(object).getSize(new Vector3());
@@ -27,9 +42,10 @@ export function scaleToLongestDimension(object: Object3D, length: number): Objec
  * are scaled by their relative size, so the ball is the Daily Object's Size
  * and nothing else about it. From Reveal Stage 6, and at the game's end, the
  * stage-6 model scaled to longest dimension 1 takes its place (ADR-0006).
+ * Its colour is style.css's `--color-hidden-object` unless `color` is given.
  */
-export function hiddenDailyObject(): Object3D {
-  return new Mesh(new SphereGeometry(0.5, 32, 16), new MeshStandardMaterial({ color: 0x8a8d99 }));
+export function hiddenDailyObject(color = tokenColour('--color-hidden-object')): Object3D {
+  return new Mesh(new SphereGeometry(0.5, 32, 16), new MeshStandardMaterial({ color }));
 }
 
 /**
@@ -93,7 +109,8 @@ export function drawStage(
 
   const renderer = new WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setClearColor(0x3a3d52);
+  // The page's own stage colour, so the canvas matches a Reveal Stage image's backdrop.
+  renderer.setClearColor(tokenColour('--color-stage'));
   const render = () => {
     renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     camera.aspect = canvas.clientWidth / canvas.clientHeight;

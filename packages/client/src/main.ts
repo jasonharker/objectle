@@ -1,6 +1,8 @@
 import type { Object3D } from 'three';
-import type { Feedback, GameResponse, WrongGuess } from '@objectle/shared';
+import type { GameResponse, WrongGuess } from '@objectle/shared';
 import { creditItem } from './credit.ts';
+import { guessHeadingRow, guessRow } from './guess-row.ts';
+import { distributionRows } from './distribution.ts';
 import { loadGuessVocabulary, outageMessage, startGame, submitGuess } from './game.ts';
 import { dailyObjectModel, loadModel, modelMediaType } from './model-loader.ts';
 import { drawStage, hiddenDailyObject, scaleToLongestDimension } from './stage-view.ts';
@@ -29,16 +31,6 @@ let disposeGhosts = () => {};
 let stageDraw = 0;
 /** Releases the current Reveal Stage's model drawings, if there are any. */
 let disposeStage = () => {};
-
-const sizeText: Record<Feedback['size'], string> = {
-  bigger: 'the Daily Object is bigger',
-  smaller: 'the Daily Object is smaller',
-  similar: 'similar',
-};
-
-function feedbackText({ category, size, naturalOrMade, primaryMaterial }: Feedback): string {
-  return `Category: ${category} · Size: ${sizeText[size]} · Natural vs. made: ${naturalOrMade} · Primary Material: ${primaryMaterial}`;
-}
 
 /**
  * Draw the Ghosts beside the Daily Object, in units of its Size: the hidden
@@ -106,12 +98,8 @@ function render(game: GameResponse) {
   if (game.firstLetter !== null) revealStage.textContent += ` · First letter: ${game.firstLetter.toUpperCase()}`;
   drawRevealStage(game).catch(showError);
   guessList.replaceChildren(
-    ...game.guesses.map((name) => {
-      const item = document.createElement('li');
-      const wrong = game.wrongGuesses.find(({ guess }) => guess === name);
-      item.textContent = wrong ? `${name}: ${feedbackText(wrong.feedback)}` : name;
-      return item;
-    }),
+    ...(game.guesses.length > 0 ? [guessHeadingRow()] : []),
+    ...game.guesses.map((name) => guessRow(name, game.wrongGuesses.find(({ guess }) => guess === name)?.feedback)),
   );
   const modelUrl = dailyObjectModel(game);
   if (`${game.wrongGuesses.length} ${modelUrl}` !== drawnGhosts) drawGhosts(game.wrongGuesses, modelUrl).catch(showError);
@@ -126,7 +114,7 @@ function render(game: GameResponse) {
   renderEndOfGame(game);
 }
 
-function renderEndOfGame({ puzzleNumber, endOfGame }: GameResponse) {
+function renderEndOfGame({ puzzleNumber, endOfGame, result }: GameResponse) {
   endSection.hidden = endOfGame === null;
   if (endOfGame === null) return;
   const { dailyObject, ghostCredits, distribution, beatPercentage } = endOfGame;
@@ -135,22 +123,38 @@ function renderEndOfGame({ puzzleNumber, endOfGame }: GameResponse) {
     beatPercentage === null
       ? `You are the first to finish #${puzzleNumber}.`
       : `You beat ${Math.round(beatPercentage)}% of the other players who finished #${puzzleNumber}.`;
-  const rows = [
-    ...distribution.solved.map((count, index) => [`Solved at Reveal Stage ${index + 1}`, count] as const),
-    ['Not solved', distribution.failed] as const,
-  ];
+  const span = (className: string, text = '') => {
+    const element = document.createElement('span');
+    element.className = className;
+    element.textContent = text;
+    return element;
+  };
   document.querySelector('#distribution')!.replaceChildren(
-    ...rows.map(([label, count]) => {
+    ...distributionRows(distribution, result).map(({ label, accessibleLabel, count, share, isPlayer }) => {
       const item = document.createElement('li');
-      item.textContent = `${label}: ${count}`;
+      item.classList.toggle('is-player', isPlayer);
+      // The visible label, bar and count repeat the hidden sentence, so screen readers skip them.
+      const visible = [span('label', label), span('track'), span('count', String(count))];
+      if (isPlayer) visible[0]!.append(' ', span('you', 'you'));
+      visible[1]!.append(span('fill'));
+      visible[1]!.style.setProperty('--share', String(share));
+      for (const element of visible) element.setAttribute('aria-hidden', 'true');
+      item.append(span('visually-hidden', accessibleLabel), ...visible);
       return item;
     }),
   );
   document.querySelector('#game-credits')!.replaceChildren(...[dailyObject, ...ghostCredits].map(creditItem));
 }
 
+// render() writes plain status text without touching data-tone; the submit handler clears an error tone before it can.
+function setMessage(text: string, tone?: 'error') {
+  message.textContent = text;
+  if (tone) message.setAttribute('data-tone', tone);
+  else message.removeAttribute('data-tone');
+}
+
 function showError(error: unknown) {
-  message.textContent = error instanceof Error ? error.message : outageMessage;
+  setMessage(error instanceof Error ? error.message : outageMessage, 'error');
 }
 
 guessForm.addEventListener('submit', async (event) => {
@@ -158,18 +162,33 @@ guessForm.addEventListener('submit', async (event) => {
   const typed = guessInput.value.trim().toLowerCase();
   const guess = names.find((name) => name.toLowerCase() === typed);
   if (!guess) {
-    message.textContent = 'Pick a Guess from the suggestions.';
+    guessInput.setAttribute('aria-invalid', 'true');
+    guessInput.setAttribute('aria-describedby', 'message');
+    setMessage('Pick a Guess from the suggestions.', 'error');
     return;
   }
-  guessButton.disabled = true;
+  if (message.hasAttribute('data-tone')) setMessage('');
+  // Disabling a focused control drops focus; it goes back afterwards.
+  const focused = [guessInput, guessButton].find((control) => control === document.activeElement);
+  guessInput.disabled = guessButton.disabled = true;
+  guessButton.setAttribute('aria-busy', 'true');
+  guessButton.textContent = 'Guessing…';
   try {
     render(await submitGuess(fetch, localStorage, guess));
     guessInput.value = '';
   } catch (error) {
     showError(error);
   } finally {
-    guessButton.disabled = false;
+    guessInput.disabled = guessButton.disabled = false;
+    guessButton.removeAttribute('aria-busy');
+    guessButton.textContent = 'Guess';
+    focused?.focus();
   }
+});
+
+guessInput.addEventListener('input', () => {
+  guessInput.removeAttribute('aria-invalid');
+  guessInput.removeAttribute('aria-describedby');
 });
 
 // The game is shown as soon as it starts, whether or not the suggestions load.

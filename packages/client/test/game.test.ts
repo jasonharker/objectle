@@ -105,7 +105,8 @@ test('a Ghost loads at true relative scale beside the hidden Daily Object', asyn
   const model = scaleToLongestDimension(await loadModel(fetch, ghost.url), ghost.relativeSize);
 
   const longest = (object: Object3D) => Math.max(...new Box3().setFromObject(object).getSize(new Vector3()).toArray());
-  expect(longest(model) / longest(hiddenDailyObject())).toBeCloseTo(ghost.relativeSize, 6);
+  // No stylesheet in Node to take the ball's colour from, and its size is all that counts here.
+  expect(longest(model) / longest(hiddenDailyObject(0))).toBeCloseTo(ghost.relativeSize, 6);
 });
 
 test('a refused Guess says why and keeps the Play Token', async () => {
