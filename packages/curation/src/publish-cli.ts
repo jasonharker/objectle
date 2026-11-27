@@ -19,7 +19,7 @@
 // default), listing each. Each exits 0 on success, 1 naming the
 // problem that stopped it on stderr, or 2 on a usage error.
 import { createHash } from 'node:crypto';
-import { constants, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { constants, copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
@@ -62,7 +62,7 @@ async function readBack(file: string): Promise<ReadBack> {
   const lines = (await readFile(file, 'utf8').catch((error) => fail(`${file} can't be read: ${error.message}`))).split('\n');
   const at = lines.findIndex((line) => /^\s*- name: OBJECTLE_LAUNCH_DATE\s*$/.test(line));
   if (at === -1) fail(`${file} sets no OBJECTLE_LAUNCH_DATE`);
-  const launchDate = /^\s*value:\s*"?([^"\s]*)"?\s*$/.exec(lines[at + 1] ?? '')?.[1];
+  const launchDate = /^\s*value:\s*(["']?)([^"'\s]*)\1\s*$/.exec(lines[at + 1] ?? '')?.[2];
   if (dayOf(launchDate) === undefined) fail(`${file} has an OBJECTLE_LAUNCH_DATE that is not a YYYY-MM-DD date`);
 
   const markers = lines.filter((line) => line.trimEnd().endsWith(marker));
@@ -77,10 +77,10 @@ async function readBack(file: string): Promise<ReadBack> {
 
 const manifestTypes = ['application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json'];
 
-async function get(url: string, headers: Record<string, string> = {}): Promise<Buffer> {
+async function get(url: string, headers: Record<string, string> = {}): Promise<{ body: Buffer; type: string | null }> {
   const response = await fetch(url, { headers }).catch((error) => fail(`${url} can't be reached: ${error.cause?.message ?? error.message}`));
   if (!response.ok) fail(`${url} answered ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return { body: Buffer.from(await response.arrayBuffer()), type: response.headers.get('content-type') };
 }
 
 /** The bytes of `name` in a tar archive, or undefined. */
@@ -102,14 +102,15 @@ function untar(archive: Buffer, name: string): Buffer | undefined {
 async function fetchBundle(reference: string, dir: string): Promise<void> {
   const [, host, repository, tag, digest] = imagePattern.exec(reference)!;
   const base = `http://${host}/v2/${repository}`;
-  const manifest = JSON.parse(
-    (await get(`${base}/manifests/${tag ?? digest}`, { accept: manifestTypes.join(', ') })).toString('utf8'),
-  );
-  if (!manifestTypes.includes(manifest.mediaType) || !Array.isArray(manifest.layers) || manifest.layers.length === 0) {
-    fail(`${reference} is not a single image with layers (its manifest is ${manifest.mediaType ?? 'untyped'})`);
+  const { body, type } = await get(`${base}/manifests/${tag ?? digest}`, { accept: manifestTypes.join(', ') });
+  const manifest = JSON.parse(body.toString('utf8'));
+  // An OCI manifest's mediaType is optional; the registry's Content-Type names it then.
+  const mediaType = manifest.mediaType ?? type?.split(';')[0].trim();
+  if (!manifestTypes.includes(mediaType) || !Array.isArray(manifest.layers) || manifest.layers.length === 0) {
+    fail(`${reference} is not a single image with layers (its manifest is ${mediaType ?? 'untyped'})`);
   }
   const top: string = manifest.layers.at(-1).digest;
-  const blob = await get(`${base}/blobs/${top}`);
+  const { body: blob } = await get(`${base}/blobs/${top}`);
   if (`sha256:${createHash('sha256').update(blob).digest('hex')}` !== top) {
     fail(`${reference}'s top layer does not match its digest ${top}`);
   }
@@ -128,7 +129,12 @@ async function imageContext(bundleDir: string, contextDir: string): Promise<void
   const text = await readFile(join(bundleDir, 'bundle.json'), 'utf8').catch(() =>
     fail(`${bundleDir} has no bundle.json, so it is not a built content bundle`),
   );
-  const bundle = JSON.parse(text);
+  let bundle;
+  try {
+    bundle = JSON.parse(text);
+  } catch {
+    fail(`${bundleDir}/bundle.json is not JSON`);
+  }
   /** Each bundle file's shard; a file two nouns name goes with the first. */
   const shards = new Map<string, string>();
   const add = (path: unknown, noun: string) => {
@@ -139,6 +145,12 @@ async function imageContext(bundleDir: string, contextDir: string): Promise<void
   for (const { noun, revealStages } of bundle.answerPool ?? []) {
     for (const { assets } of revealStages ?? []) for (const asset of assets ?? []) add(asset, noun);
   }
+  // Every file is checked before any is copied, so a failure leaves no half-filled context.
+  const missing = [];
+  for (const path of shards.keys()) {
+    if (!(await stat(join(bundleDir, path)).then((s) => s.isFile(), () => false))) missing.push(path);
+  }
+  if (missing.length > 0) fail(missing.map((path) => `bundle.json names ${path}, which is missing from ${bundleDir}`).join('\n'));
   for (const [path, shard] of shards) {
     const target = join(contextDir, 'shards', shard, path);
     await mkdir(dirname(target), { recursive: true });
@@ -200,10 +212,15 @@ async function readSchedule(dir: string): Promise<{ launchDate: string; nouns: M
 
 /** The midnight guard: the new Schedule must match the deployed one through the active Puzzle Number. */
 async function guard(deployedDir: string, bundleDir: string, now: Date): Promise<void> {
-  // The deployed Launch Date is the one players count Puzzle Numbers from; a
-  // bundle built for another one is refused by the API at load anyway.
+  // The deployed Launch Date is the one players count Puzzle Numbers from.
   const deployed = await readSchedule(deployedDir);
-  const { nouns } = await readSchedule(bundleDir);
+  const { launchDate, nouns } = await readSchedule(bundleDir);
+  if (launchDate !== deployed.launchDate) {
+    fail(
+      `midnight guard: the new bundle is built for Launch Date ${launchDate}, not the deployed Launch Date ` +
+        `${deployed.launchDate}; not deploying`,
+    );
+  }
   const active = dayOf(pacificDateAt(now))! - dayOf(deployed.launchDate)! + 1;
   const name = (noun: string | undefined) => (noun === undefined ? 'nothing' : JSON.stringify(noun));
   const differences: string[] = [];

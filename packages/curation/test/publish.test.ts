@@ -4,7 +4,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -72,8 +72,8 @@ describe('read-back', () => {
     );
   });
 
-  test('reads an unquoted Launch Date', async () => {
-    const run = await publish('read-back', await deploymentFile({ launchDate: '2027-03-01' }));
+  test.each(['2027-03-01', "'2027-03-01'"])('reads a Launch Date written as %s', async (launchDate) => {
+    const run = await publish('read-back', await deploymentFile({ launchDate }));
     expect(run.stdout).toContain('LAUNCH_DATE=2027-03-01\n');
   });
 
@@ -150,11 +150,13 @@ interface FakeImage {
   servedTopLayer?: Buffer;
   /** Serve an image index instead of an image manifest. */
   index?: boolean;
+  /** Leave the optional mediaType out of the manifest, so only the Content-Type header names it. */
+  untyped?: boolean;
 }
 
 /** A registry speaking the HTTP API v2 for one image, `objectle-content:<tag>`; resolves to its host:port. */
 async function fakeRegistry(tag: string, image: FakeImage): Promise<{ host: string; close: () => void }> {
-  const { mediaType = dockerManifest, layers, servedTopLayer, index = false } = image;
+  const { mediaType = dockerManifest, layers, servedTopLayer, index = false, untyped = false } = image;
   const manifest = index
     ? { schemaVersion: 2, mediaType: 'application/vnd.oci.image.index.v1+json', manifests: [] }
     : {
@@ -173,7 +175,8 @@ async function fakeRegistry(tag: string, image: FakeImage): Promise<{ host: stri
     if (url === `/v2/objectle-content/manifests/${tag}`) {
       const accepted = request.headers.accept ?? '';
       if (!index && !accepted.includes(manifest.mediaType)) return response.writeHead(404).end();
-      return response.writeHead(200, { 'content-type': manifest.mediaType }).end(JSON.stringify(manifest));
+      const body = untyped ? { ...manifest, mediaType: undefined } : manifest;
+      return response.writeHead(200, { 'content-type': manifest.mediaType }).end(JSON.stringify(body));
     }
     const blob = url.startsWith('/v2/objectle-content/blobs/') ? blobs.get(url.slice(27)) : undefined;
     if (blob !== undefined) return response.writeHead(200).end(blob);
@@ -201,6 +204,23 @@ describe('fetch-bundle', () => {
       expect(run.status).toBe(0);
       expect(await readFile(join(dir, 'bundle.json'), 'utf8')).toBe(deployedBundle);
       expect(await readdir(dir)).toEqual(['bundle.json']);
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('takes the manifest media type from the Content-Type header when the manifest leaves it out', async () => {
+    const registry = await fakeRegistry('t', {
+      mediaType: ociManifest,
+      untyped: true,
+      layers: [gzipSync(tar({ 'bundle.json': deployedBundle }))],
+    });
+    try {
+      const dir = await tempDir('deployed');
+      const run = await publish('fetch-bundle', `${registry.host}/objectle-content:t`, dir);
+      expect(run.stderr).toBe('');
+      expect(run.status).toBe(0);
+      expect(await readFile(join(dir, 'bundle.json'), 'utf8')).toBe(deployedBundle);
     } finally {
       registry.close();
     }
@@ -351,6 +371,26 @@ describe('image-context', () => {
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('bundle.json');
   });
+
+  test('fails on a bundle.json that is not JSON, naming it', async () => {
+    const bundle = await tempDir('bundle');
+    await writeFile(join(bundle, 'bundle.json'), 'not json');
+    const context = join(await tempDir('context'), 'context');
+    const run = await publish('image-context', bundle, context);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`${bundle}/bundle.json is not JSON`);
+    await expect(readdir(context)).rejects.toThrow();
+  });
+
+  test('fails on a bundle file that is missing, naming it, before writing any of the context', async () => {
+    const bundle = await bundleDir(12);
+    await rm(join(bundle, 'assets/noun 11-stage-6.webp'));
+    const context = join(await tempDir('context'), 'context');
+    const run = await publish('image-context', bundle, context);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('assets/noun 11-stage-6.webp');
+    await expect(readdir(context)).rejects.toThrow();
+  });
 });
 
 describe('deploy (dry run)', () => {
@@ -454,6 +494,15 @@ describe('guard', () => {
     const run = await publish('guard', '--now', '2027-03-01T12:00:00-08:00', dir, await bundle());
     expect(run.status).toBe(1);
     expect(run.stderr.match(/^Puzzle Number \d+/gm)).toEqual(['Puzzle Number 1']);
+  });
+
+  test('refuses a new bundle built for another Launch Date, naming both', async () => {
+    const dir = await tempDir('bundle');
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify({ launchDate: '2027-03-02', schedule: [] }));
+    const run = await publish('guard', '--now', '2027-02-01T12:00:00-08:00', await bundle(), dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('2027-03-02');
+    expect(run.stderr).toContain('2027-03-01');
   });
 
   test('passes any difference before launch', async () => {
