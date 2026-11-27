@@ -1,0 +1,17 @@
+{
+  "name": "@objectle/curation",
+  "private": true,
+  "type": "module",
+  "exports": "./src/build.ts",
+  "dependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
+    "@objectle/shared": "workspace:*",
+    "meshoptimizer": "1.3.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "three": "^0.187.0"
+  }
+}

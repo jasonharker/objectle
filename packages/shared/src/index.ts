@@ -1,6 +1,47 @@
 // The content bundle schema (produced by the curation build, consumed by the
 // scoring API) and the scoring API's response shapes. Terms follow GLOSSARY.md.
 
+/** The fourteen Categories, each defined in GLOSSARY.md. */
+export const categories = [
+  'Food & Drink',
+  'Cooking & Dining',
+  'Music',
+  'Sport & Play',
+  'Tools & Repair',
+  'Gardening',
+  'Office & Study',
+  'Media & Computing',
+  'Home & Furniture',
+  'Clothing & Accessories',
+  'Health & Personal Care',
+  'Transport',
+  'Travel & Outdoors',
+  'Nature',
+] as const;
+export type Category = (typeof categories)[number];
+
+/** The eleven Primary Materials, each named by what it looks like (GLOSSARY.md, ADR-0003). */
+export const primaryMaterials = [
+  'organic',
+  'wood',
+  'metal',
+  'plastic',
+  'fabric',
+  'leather',
+  'glass',
+  'ceramic',
+  'rubber',
+  'paper',
+  'stone',
+] as const;
+export type PrimaryMaterial = (typeof primaryMaterials)[number];
+
+export const difficultyRatings = ['easy', 'medium', 'hard'] as const;
+export type DifficultyRating = (typeof difficultyRatings)[number];
+
+/** Every Answer Pool object has this many Reveal Stages. */
+export const revealStageCount = 6;
+
 export interface Credit {
   author: string;
   source: string;
@@ -11,13 +52,11 @@ export interface GuessVocabularyEntry {
   name: string;
   /** Path of the noun's model, relative to the bundle directory. */
   model: string;
-  /** One of the twelve Categories (set still to be written down, #3). */
-  category: string;
+  category: Category;
   /** Size: the longest dimension, in metres, of a typical example of the noun (ADR-0005). */
   size: number;
   naturalOrMade: 'natural' | 'made';
-  /** One of the enumerated Primary Materials (set still to be written down, #3). */
-  primaryMaterial: string;
+  primaryMaterial: PrimaryMaterial;
   credit: Credit;
   inAnswerPool: boolean;
 }
@@ -32,7 +71,7 @@ export interface AnswerPoolEntry {
   noun: string;
   /** Reveal Stages in order; index 0 is Reveal Stage 1. */
   revealStages: RevealStage[];
-  difficultyRating: 'easy' | 'medium' | 'hard';
+  difficultyRating: DifficultyRating;
 }
 
 export interface ScheduleEntry {
@@ -97,6 +136,8 @@ export interface GameResponse {
   puzzleNumber: number;
   revealStage: number;
   stageAssets: StageAsset[];
+  /** From Reveal Stage 6 on, the first letter of the Daily Object's name; null before. */
+  firstLetter: string | null;
   /** Guess Vocabulary names guessed so far, in order. */
   guesses: string[];
   /** The game's Result, or null while it is still being played. */
@@ -124,6 +165,11 @@ export interface Distribution {
 export interface EndOfGame {
   /** The Daily Object's name and Credit. */
   dailyObject: ModelCredit;
+  /**
+   * Reveal Stage 6's assets, whatever Reveal Stage the game ended at, so the
+   * Daily Object's model can take the hidden ball's place beside the Ghosts.
+   */
+  lastStageAssets: StageAsset[];
   /** The Credit of each Ghost, in the order guessed. */
   ghostCredits: ModelCredit[];
   /** Every game finished so far on this Puzzle Number, the player's included. */

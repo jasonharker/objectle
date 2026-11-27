@@ -2,6 +2,11 @@
   "name": "@objectle/client",
   "private": true,
   "type": "module",
+  "exports": {
+    "./model-loader": "./src/model-loader.ts",
+    "./stage-view": "./src/stage-view.ts",
+    "./style.css": "./src/style.css"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite"

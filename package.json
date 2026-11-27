@@ -10,7 +10,10 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "build": "pnpm --filter @objectle/client build",
-    "start": "node packages/api/src/server.ts"
+    "start": "node packages/api/src/server.ts",
+    "curate": "node packages/curation/src/cli.ts",
+    "prepare-model": "node packages/curation/src/prepare-cli.ts",
+    "author": "node packages/authoring/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

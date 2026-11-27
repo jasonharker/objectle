@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Objectle stage authoring</title>
+    <link rel="stylesheet" href="/src/tool.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Stage authoring</h1>
+      <label>Answer Pool object <select id="noun"><option value="">Choose a noun</option></select></label>
+      <label
+        >Difficulty Rating
+        <select id="difficulty">
+          <option value="">Not rated</option>
+          <option>easy</option>
+          <option>medium</option>
+          <option>hard</option>
+        </select>
+      </label>
+      <button id="save" type="button" disabled>Save</button>
+      <p id="model-status" role="status"></p>
+    </header>
+    <fieldset id="stages">
+      <legend>Reveal Stage</legend>
+    </fieldset>
+    <div id="workspace">
+      <section id="camera">
+        <div id="view-frame">
+          <canvas id="view" aria-label="Live view through the stage's look"></canvas>
+          <div id="mark-box" hidden></div>
+        </div>
+        <p id="live-warning" role="alert"></p>
+        <form id="camera-fields">
+          <label>Camera position <input id="position" placeholder="x, y, z" /></label>
+          <label>Camera target <input id="target" placeholder="x, y, z" /></label>
+          <label>Field of view <input id="fov" type="number" min="1" max="120" step="any" /></label>
+          <button type="submit" hidden>Go</button>
+        </form>
+        <p>
+          <button id="use-view" type="button">Use this view as the Stage Camera</button>
+          <button id="go-to" type="button">Go to the Stage Camera</button>
+        </p>
+        <p>
+          <button id="mark-text" type="button" aria-pressed="false">Mark text</button>
+          <button id="clear-marks" type="button">Clear text marks</button>
+          <label><input id="show-marks" type="checkbox" /> Show text marks</label>
+          <span id="mark-count"></span>
+        </p>
+        <ol id="stage-summary"></ol>
+      </section>
+      <section id="preview">
+        <p><button id="preview-button" type="button">Preview</button></p>
+        <iframe id="player" src="/preview.html" title="Reveal Stage as a player sees it"></iframe>
+        <ul id="save-status" role="status"></ul>
+      </section>
+    </div>
+    <script type="module" src="/src/tool.ts"></script>
+  </body>
+</html>
