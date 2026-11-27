@@ -7,7 +7,9 @@
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
 // its asset files as given, checked against the ADR-0006 stage asset format;
 // the stage-authoring tool (packages/authoring) renders them from the Stage
-// Cameras it records beside them, which the build ignores. schedule.json is the
+// Cameras it records beside them, with each stage's render fingerprint, which
+// the build recomputes to refuse a stage rendered from anything other than the
+// current model, Stage Camera, render settings and render code. schedule.json is the
 // previously published Schedule: the bundle's schedule, copied back when it is
 // published. The build extends it around the Pins in pins.json ({ date, noun },
 // by Pacific date) by ADR-0007.
@@ -24,6 +26,7 @@ import {
   type GuessVocabularyEntry,
   type ScheduleEntry,
 } from '@objectle/shared';
+import { stageFingerprints, type RenderFingerprint } from '@objectle/shared/render-fingerprint';
 import { stageAssetProblems } from '@objectle/shared/stage-assets';
 import { dayOf, pacificDateAt, planSchedule } from './schedule.ts';
 
@@ -65,6 +68,22 @@ const oneOf = <T extends string>(set: readonly T[], value: unknown): value is T 
  * does; decoding every stage-1 image would only repeat its answer.
  */
 const showsBackground = (webp: Buffer) => ((webp.readUInt32LE(21) >>> 28) & 1) === 1;
+
+/**
+ * Why a Reveal Stage's recorded render fingerprint is not `current`, as the
+ * end of a sentence about the stage; undefined if it is.
+ */
+function staleness(recorded: unknown, current: RenderFingerprint): string | undefined {
+  if (!isObject(recorded)) return 'has no render fingerprint; render it with the stage-authoring tool';
+  const changed = (key: keyof RenderFingerprint) => recorded[key] !== current[key];
+  const from = [changed('model') && 'model', changed('stageCamera') && 'Stage Camera'].filter(Boolean).join(' and ');
+  const what = [
+    from && `from another ${from}`,
+    changed('renderSettings') && 'with other render settings',
+    changed('renderCode') && 'by other render code',
+  ].filter(Boolean);
+  return what.length === 0 ? undefined : `was rendered ${what.join(', ')}; render it again with the stage-authoring tool`;
+}
 
 /** Whether a path names a file inside the content directory, so it lands inside the bundle directory too. */
 export function staysInside(path: string): boolean {
@@ -156,6 +175,8 @@ export async function buildContent(
   const names = new Set<string>();
   /** Model paths by the hash of their bytes: a stage asset with a model's bytes would match its Ghost. */
   const modelsByHash = new Map<string, string>();
+  /** Each noun's model bytes, which its Reveal Stages' render fingerprints cover. */
+  const modelBytes = new Map<string, Buffer>();
   for (const [index, entry] of (vocabularyInput ?? []).entries()) {
     if (!isObject(entry) || !isText(entry.name)) {
       problems.push(`Guess Vocabulary entry ${index + 1} has no name`);
@@ -169,7 +190,10 @@ export async function buildContent(
     if (isMissing(model)) problems.push(`${label} has no model`);
     else {
       const bytes = await check(model, 'model', label);
-      if (bytes !== undefined) modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+      if (bytes !== undefined) {
+        modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+        modelBytes.set(name, bytes);
+      }
     }
 
     if (isMissing(category)) problems.push(`${label} has no Category`);
@@ -227,10 +251,19 @@ export async function buildContent(
       if (revealStages.length !== revealStageCount) {
         problems.push(`${label} has ${revealStages.length} Reveal Stages, not ${revealStageCount}`);
       }
+      const model = modelBytes.get(noun);
+      const fingerprints =
+        model === undefined
+          ? undefined
+          : await stageFingerprints(model, revealStages.map((stage) => (isObject(stage) ? stage.stageCamera : undefined)));
       for (const [stageIndex, stage] of revealStages.entries()) {
         const stageLabel = `${label} Reveal Stage ${stageIndex + 1}`;
         const assets: unknown[] = isObject(stage) && Array.isArray(stage.assets) ? stage.assets : [];
         if (assets.length === 0) problems.push(`${stageLabel} has no assets`);
+        else if (fingerprints?.[stageIndex] !== undefined) {
+          const stale = staleness(isObject(stage) ? stage.fingerprint : undefined, fingerprints[stageIndex]);
+          if (stale !== undefined) problems.push(`${stageLabel} ${stale}`);
+        }
         for (const asset of assets) {
           const bytes = await check(asset, 'asset', stageLabel);
           if (bytes === undefined) continue;

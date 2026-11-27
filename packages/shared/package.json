@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./render-fingerprint": "./src/render-fingerprint.ts",
     "./shader": "./src/shader.ts",
     "./stage-assets": "./src/stage-assets.ts"
   },

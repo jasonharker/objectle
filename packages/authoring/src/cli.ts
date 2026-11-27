@@ -4,7 +4,8 @@
 //   node packages/authoring/src/cli.ts render <content-dir> [<noun>...]
 //     renders the named Answer Pool objects, or every authored one, from their
 //     recorded Stage Cameras in headless Chromium, and writes their Reveal Stage
-//     assets: run it after retuning the shader (ADR-0002), then the curation build.
+//     assets and their render fingerprints: run it after retuning the shader
+//     (ADR-0002) or re-preparing a model, then the curation build.
 // render exits 0 having written every object's assets, 1 listing every problem
 // (one per line on stderr; an object with problems keeps its earlier entry), or
 // 2 on a usage error.

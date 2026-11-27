@@ -12,25 +12,14 @@ import {
   type Object3D,
   type Texture,
 } from 'three';
+import { palette } from './render-fingerprint.ts';
 
 /** An sRGB colour, each channel in [0, 1]. */
 export type Rgb = [number, number, number];
 
-/**
- * The shared palette definition. `depth` (levels per hue) and `blackFloor`
- * (brightness of the darkest level) are the two tuning settings; change them
- * here and every consumer of the shader follows.
- */
-export const palette = {
-  /** Brightness levels per hue; ADR-0002 allows 8–16. */
-  depth: 12,
-  /** Brightness of the darkest level, lifted above pure black. */
-  blackFloor: 0.12,
-  /** Hues the palette snaps to, evenly spaced round the colour wheel. */
-  hues: 24,
-  /** Saturation steps from grey to full colour. */
-  saturations: 5,
-} as const;
+// The palette is defined with the other render settings, which every Reveal
+// Stage's render fingerprint covers.
+export { palette };
 
 const quantize = (x: number, steps: number) => Math.round(x * (steps - 1)) / (steps - 1);
 

@@ -130,6 +130,20 @@ describe.skipIf(chromiumPath() === undefined)('rendering recorded Stage Cameras 
     expect(game.stageAssets.map(({ mediaType }) => mediaType)).toEqual(['model/gltf-binary']);
   });
 
+  test('records render fingerprints that a re-prepared model makes the curation build reject', async () => {
+    const dir = await contentDir();
+    expect((await run(authoringCli, ['render', dir])).code).toBe(0);
+    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00'];
+    expect((await run(curationCli, [...clock, dir, join(dir, 'bundle')])).code).toBe(0);
+
+    await writeFile(join(dir, 'models/tea-caddy.glb'), caddyModel([0.2, 0.5, 0.1]));
+    const built = await run(curationCli, [...clock, dir, join(dir, 'stale-bundle')]);
+    expect(built.code).toBe(1);
+    for (const stage of [1, 2, 3, 4, 5, 6]) {
+      expect(built.stderr).toContain(`"tea caddy" Reveal Stage ${stage} was rendered from another model;`);
+    }
+  });
+
   test('refuses a Reveal Stage 1 Stage Camera that frames background, and writes nothing', async () => {
     const entry = answerPoolEntry({ 1: camera([0, 0, -0.5]) });
     const dir = await contentDir(entry);

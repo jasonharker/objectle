@@ -2,24 +2,24 @@
   {
     "noun": "teapot",
     "revealStages": [
-      { "assets": ["assets/teapot-stage-1.webp"] },
-      { "assets": ["assets/teapot-stage-2.webp"] },
-      { "assets": ["assets/teapot-stage-3.webp"] },
-      { "assets": ["assets/teapot-stage-4.webp"] },
-      { "assets": ["assets/teapot-stage-5.webp"] },
-      { "assets": ["assets/teapot-stage-6.glb"] }
+      { "stageCamera": {"position": [0, 0.1, 1], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/teapot-stage-1.webp"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "9bf0580b644ad60bc6f8c2cdc993a7c2e6f7509b71e8dc76722524f1424ee85b", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 2], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/teapot-stage-2.webp"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "b943bd64ba9eebc12171e4eebbcfa081f52cd0752e498d1480d3ec2348233bca", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 3], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/teapot-stage-3.webp"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "7c8ddcc314aa0e42d4744463bf1b1cf8753ef15685d053e0e148f1d0ceae6d91", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 4], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/teapot-stage-4.webp"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "37057706a61ef0881e483f434942ec5a135c6f2b32438ff0b556407cbd4760f8", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 5], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/teapot-stage-5.webp"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "e9de9a27ed3b84b66a1dc4f780587b80964910cb84db75d46d9ea8c0f3ba59aa", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "assets": ["assets/teapot-stage-6.glb"], "fingerprint": {"model": "f9cbb7634a260ae29860ac764d271f50c88bf542909911b345c5476deccf5781", "stageCamera": "e9de9a27ed3b84b66a1dc4f780587b80964910cb84db75d46d9ea8c0f3ba59aa", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} }
     ],
     "difficultyRating": "easy"
   },
   {
     "noun": "pinecone",
     "revealStages": [
-      { "assets": ["assets/pinecone-stage-1.webp"] },
-      { "assets": ["assets/pinecone-stage-2.webp"] },
-      { "assets": ["assets/pinecone-stage-3.webp"] },
-      { "assets": ["assets/pinecone-stage-4.webp"] },
-      { "assets": ["assets/pinecone-stage-5.webp"] },
-      { "assets": ["assets/pinecone-stage-6.glb"] }
+      { "stageCamera": {"position": [0, 0.1, 1], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/pinecone-stage-1.webp"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "9bf0580b644ad60bc6f8c2cdc993a7c2e6f7509b71e8dc76722524f1424ee85b", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 2], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/pinecone-stage-2.webp"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "b943bd64ba9eebc12171e4eebbcfa081f52cd0752e498d1480d3ec2348233bca", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 3], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/pinecone-stage-3.webp"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "7c8ddcc314aa0e42d4744463bf1b1cf8753ef15685d053e0e148f1d0ceae6d91", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 4], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/pinecone-stage-4.webp"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "37057706a61ef0881e483f434942ec5a135c6f2b32438ff0b556407cbd4760f8", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "stageCamera": {"position": [0, 0.1, 5], "target": [0, 0, 0], "fov": 30}, "assets": ["assets/pinecone-stage-5.webp"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "e9de9a27ed3b84b66a1dc4f780587b80964910cb84db75d46d9ea8c0f3ba59aa", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} },
+      { "assets": ["assets/pinecone-stage-6.glb"], "fingerprint": {"model": "7a5fd203e9e2411c52644bdbad594c623cde4f664b077f6d60e48c2f301acae9", "stageCamera": "e9de9a27ed3b84b66a1dc4f780587b80964910cb84db75d46d9ea8c0f3ba59aa", "renderSettings": "ca48ed8842feddc059d6c60f58f2301e2a858f55d58b60af3f9aede2ad65ff2f", "renderCode": 1} }
     ],
     "difficultyRating": "medium"
   }

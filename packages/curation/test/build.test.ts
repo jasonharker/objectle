@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import type { ContentBundle } from '@objectle/shared';
+import { renderCodeVersion, renderSettings, stageFingerprints } from '@objectle/shared/render-fingerprint';
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 
@@ -99,13 +100,26 @@ function fileBytes(path: string): Buffer {
   return Buffer.concat([header, json, binHeader, bin]);
 }
 
+/** A distinct Stage Camera for each of Reveal Stages 1-5. */
+const stageCamera = (revealStage: number) => ({ position: [0, 0.1, 0.2 * revealStage], target: [0, 0, 0], fov: 30 });
+
+/** What a Reveal Stage was rendered with, if not the current render settings and render code. */
+type RenderedWith = Parameters<typeof stageFingerprints>[2];
+
 /**
  * Write a content directory: the curation input files plus a distinct model
  * and stage asset file for every path the valid content names. `added`
- * Answer Pool objects join the valid content, files included. `edit` changes
- * the JSON after the files are written, so it can point at missing files.
+ * Answer Pool objects join the valid content, files included. Every Reveal
+ * Stage of the content is recorded as the stage-authoring tool renders it,
+ * with a Stage Camera and the render fingerprint of `renderedWith`. `edit`
+ * changes the JSON after that, so it can point at missing files or move a
+ * Stage Camera after its stage was rendered.
  */
-async function contentDir(edit: (content: ContentInput) => void = () => {}, added: Added[] = []): Promise<string> {
+async function contentDir(
+  edit: (content: ContentInput) => void = () => {},
+  added: Added[] = [],
+  renderedWith: RenderedWith = {},
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'objectle-curation-'));
   const content = validContent();
   for (const [name, difficultyRating] of added) {
@@ -119,6 +133,13 @@ async function contentDir(edit: (content: ContentInput) => void = () => {}, adde
   for (const file of files) {
     await mkdir(dirname(join(dir, file)), { recursive: true });
     await writeFile(join(dir, file), fileBytes(file));
+  }
+  for (const entry of content.answerPool) {
+    const stages: Json[] = entry.revealStages;
+    stages.slice(0, 5).forEach((stage, index) => (stage.stageCamera = stageCamera(index + 1)));
+    const model = fileBytes(find(content, entry.noun).model);
+    const fingerprints = await stageFingerprints(model, stages.map((stage) => stage.stageCamera), renderedWith);
+    stages.forEach((stage, index) => (stage.fingerprint = fingerprints[index]));
   }
   edit(content);
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(content.guessVocabulary));
@@ -476,6 +497,79 @@ describe.concurrent('A Reveal Stage asset (ADR-0006)', () => {
     const run = await curate(dir);
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/"teapot" Reveal Stage 6 .*teapot-stage-6\.glb, whose bytes .* models\/wooden-spoon\.glb/);
+  });
+});
+
+/** Every Reveal Stage a failed build lists as stale or unfingerprinted, as `noun stage`. */
+const staleStages = (stderr: string) =>
+  [...stderr.matchAll(/"([^"]+)" Reveal Stage (\d) (?:was rendered|has no render fingerprint)/g)].map(
+    ([, noun, stage]) => `${noun} ${stage}`,
+  );
+
+const allStages = (noun: string) => [1, 2, 3, 4, 5, 6].map((stage) => `${noun} ${stage}`);
+
+// Each test runs the build once; they run one at a time, as the Schedule tests below do.
+describe('A Reveal Stage’s render fingerprint (ADR-0006)', () => {
+  test('recorded when it was rendered passes, and is left out of the bundle', async () => {
+    const run = await curate(await contentDir());
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.stringify(await readBundle(run.bundleDir))).not.toMatch(/fingerprint|stageCamera/);
+  });
+
+  test('fails every stage of a noun whose model was re-prepared since, naming the model', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'models/teapot.glb'), fileBytes('models/re-prepared-teapot.glb'));
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual(allStages('teapot'));
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 1 was rendered from another model;/);
+  });
+
+  test('fails only the stage whose Stage Camera moved since, naming the Stage Camera', async () => {
+    const stderr = await problems((content) => (findAnswer(content, 'pinecone').revealStages[1].stageCamera.fov = 35));
+    expect(staleStages(stderr)).toEqual(['pinecone 2']);
+    expect(stderr).toMatch(/"pinecone" Reveal Stage 2 was rendered from another Stage Camera;/);
+  });
+
+  test('fails Reveal Stages 5 and 6 when the stage-5 Stage Camera moved, as the stage-6 export carries it', async () => {
+    const stderr = await problems((content) => findAnswer(content, 'teapot').revealStages[4].stageCamera.position[0]++);
+    expect(staleStages(stderr)).toEqual(['teapot 5', 'teapot 6']);
+  });
+
+  test.each([
+    ['resolution', { resolution: 2048 }],
+    ['palette depth', { depth: renderSettings.depth + 1 }],
+    ['black floor', { blackFloor: renderSettings.blackFloor + 0.01 }],
+  ])('fails every stage when the %s changed since, naming the render settings', async (_, changed) => {
+    const dir = await contentDir(() => {}, [], { settings: { ...renderSettings, ...changed } });
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual([...allStages('teapot'), ...allStages('pinecone')]);
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 3 was rendered with other render settings;/);
+  });
+
+  test('fails every stage when the render code changed since, naming the render code', async () => {
+    const run = await curate(await contentDir(() => {}, [], { renderCode: renderCodeVersion - 1 }));
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual([...allStages('teapot'), ...allStages('pinecone')]);
+    expect(run.stderr).toMatch(/"pinecone" Reveal Stage 6 was rendered by other render code;/);
+  });
+
+  test('names everything that changed since', async () => {
+    const dir = await contentDir((content) => (findAnswer(content, 'teapot').revealStages[0].stageCamera.fov = 20), [], {
+      renderCode: renderCodeVersion - 1,
+    });
+    await writeFile(join(dir, 'models/teapot.glb'), fileBytes('models/re-prepared-teapot.glb'));
+    const run = await curate(dir);
+    expect(run.stderr).toMatch(
+      /"teapot" Reveal Stage 1 was rendered from another model and Stage Camera, by other render code; render it again/,
+    );
+  });
+
+  test('that is missing fails that stage alone, telling the curator to render it', async () => {
+    const stderr = await problems((content) => delete findAnswer(content, 'teapot').revealStages[2].fingerprint);
+    expect(staleStages(stderr)).toEqual(['teapot 3']);
+    expect(stderr).toMatch(/"teapot" Reveal Stage 3 has no render fingerprint; render it with the stage-authoring tool/);
   });
 });
 
