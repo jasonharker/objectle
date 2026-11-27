@@ -32,5 +32,6 @@ COPY --from=build /app/content/placeholder content/placeholder
 ENV OBJECTLE_CLIENT_DIR=/app/packages/client/dist PORT=8080
 # Numeric, so a pod's runAsNonRoot can verify it.
 USER 65532:65532
-EXPOSE 8080
+# 9464 is the metrics listener (OBJECTLE_METRICS_PORT), not routed publicly.
+EXPOSE 8080 9464
 CMD ["packages/api/src/server.ts"]
