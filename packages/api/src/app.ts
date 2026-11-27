@@ -248,10 +248,17 @@ export function buildApp({
  */
 export function buildMetricsApp({ clock, launchDate, content }: Pick<Dependencies, 'clock' | 'launchDate' | 'content'>) {
   const app = Fastify();
-  const lastScheduled = content.bundle.schedule.reduce((last, { puzzleNumber }) => Math.max(last, puzzleNumber), 0);
+  const scheduled = new Set(content.bundle.schedule.map(({ puzzleNumber }) => puzzleNumber));
 
   app.get('/metrics', async (_request, reply) => {
-    const remaining = lastScheduled - Math.max(1, puzzleNumberAt(clock(), launchDate));
+    // Only the unbroken run from the active Puzzle Number counts: a shortfall
+    // can leave holes before a later Pin. With the active one unscheduled, it
+    // counts back to the last scheduled one before it, so it goes negative.
+    const active = Math.max(1, puzzleNumberAt(clock(), launchDate));
+    let end = active;
+    if (scheduled.has(end)) while (scheduled.has(end + 1)) end++;
+    else while (end > 0 && !scheduled.has(end)) end--;
+    const remaining = end - active;
     return reply
       .type('text/plain; version=0.0.4; charset=utf-8')
       .send(

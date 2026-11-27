@@ -51,6 +51,20 @@ test('is zero on the last scheduled Puzzle Number and negative once the Schedule
   expect(await scrape(await startMetrics({ now: '2027-03-12T12:00:00-08:00', contentDir }))).toBe(-2);
 });
 
+test('counts only the unbroken run of scheduled Puzzle Numbers past the active one, not a later Pin past a hole', async () => {
+  const dir = await copyFixture();
+  const bundle: ContentBundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
+  bundle.schedule = [...Array.from({ length: 30 }, (_, i) => i + 1), 95].map((puzzleNumber) => ({
+    puzzleNumber,
+    noun: puzzleNumber % 2 === 0 ? 'pinecone' : 'teapot',
+    pinned: puzzleNumber === 95,
+  }));
+  await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundle));
+  expect(await scrape(await startMetrics({ now: '2027-03-10T12:00:00-08:00', contentDir: dir }))).toBe(20);
+  // Active on 30, the end of the run: the hole at Puzzle Number 31 leaves none.
+  expect(await scrape(await startMetrics({ now: '2027-03-30T12:00:00-08:00', contentDir: dir }))).toBe(0);
+});
+
 test('is not served on the public listener', async () => {
   const api = await startApi({ now: '2027-03-04T12:00:00-08:00', contentDir });
   const response = await api.inject({ method: 'GET', url: '/metrics' });
