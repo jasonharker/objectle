@@ -124,7 +124,13 @@ export async function saveAuthoredObject(
   // loaded records the new bytes. Send the rendered bytes' digest with the save if that race ever bites.
   const modelPath = vocabulary.find(({ name }) => name === object.noun)?.model;
   const modelBytes = modelPath === undefined ? undefined : await readFile(join(contentDir, modelPath)).catch(() => undefined);
-  if (modelPath !== undefined && modelBytes === undefined) problems.push(`the model of ${object.noun}, ${modelPath}, cannot be read`);
+  if (modelBytes === undefined) {
+    problems.push(
+      modelPath === undefined
+        ? `${object.noun} has no model in the Guess Vocabulary`
+        : `the model of ${object.noun}, ${modelPath}, cannot be read`,
+    );
+  }
   const assets = [...images, model].map((bytes) => Buffer.from(bytes));
   if (assets.length !== revealStageCount) problems.push(`there are ${assets.length} Reveal Stage assets, not ${revealStageCount}`);
   assets.forEach((bytes, index) => {

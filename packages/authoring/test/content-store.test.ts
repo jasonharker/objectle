@@ -114,6 +114,15 @@ describe('saving an authored Answer Pool object', () => {
     expect(await readJson(dir, 'answer-pool.json')).toEqual([]);
   });
 
+  test('refuses an object whose Guess Vocabulary entry names no model', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'objectle-authoring-'));
+    await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify([{ name: 'teapot' }]));
+    await writeFile(join(dir, 'answer-pool.json'), '[]');
+    const problems = await saveAuthoredObject(dir, authored('teapot'), assets('teapot'));
+    expect(problems).toEqual(['teapot has no model in the Guess Vocabulary']);
+    expect(await readJson(dir, 'answer-pool.json')).toEqual([]);
+  });
+
   test('replaces the object’s earlier entry and keeps every other entry as it was', async () => {
     const other = { noun: 'pinecone', revealStages: [], difficultyRating: 'hard', note: 'kept' };
     const dir = await contentDir([{ noun: 'teapot', difficultyRating: 'easy' }, other]);
