@@ -7,10 +7,11 @@
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
 // its asset files as given, checked against the ADR-0006 stage asset format;
 // the stage-authoring tool (packages/authoring) renders them from the Stage
-// Cameras it records beside them, which the build ignores. schedule.json is the
-// previously published Schedule: the bundle's schedule, copied back when it is
-// published. The build extends it around the Pins in pins.json ({ date, noun },
-// by Pacific date) by ADR-0007.
+// Cameras it records beside them, which the build ignores. The previously
+// published Schedule is not a curation input: it is the schedule in the
+// bundle.json of the previous bundle, the one being served (ADR-0008), or
+// empty on a first publish. The build extends it around the Pins in pins.json
+// ({ date, noun }, by Pacific date) by ADR-0007.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
@@ -31,7 +32,6 @@ export const inputFiles = {
   guessVocabulary: 'guess-vocabulary.json',
   answerPool: 'answer-pool.json',
   pins: 'pins.json',
-  schedule: 'schedule.json',
 } as const;
 
 export interface BuildOptions {
@@ -39,6 +39,8 @@ export interface BuildOptions {
   launchDate: string;
   /** The instant the build runs at, which decides the active Puzzle Number. */
   now: Date;
+  /** The previous bundle's directory, whose Schedule the build extends; without one, the Schedule starts empty. */
+  previousBundle?: string;
   /** Mixed into the shuffle that breaks ties between equally eligible objects. */
   seed?: string;
 }
@@ -48,6 +50,8 @@ export interface BuildResult {
   problems: string[];
   /** What a passing build reports: a Schedule shortfall and each Difficulty Pattern substitution. */
   notices: string[];
+  /** A passing build's Schedule from the active Puzzle Number on (from Puzzle Number 1 before launch). */
+  upcoming: ScheduleEntry[];
 }
 
 type Json = Record<string, unknown>;
@@ -94,6 +98,23 @@ export async function readInput(contentDir: string, file: string, problems: stri
   return value;
 }
 
+/** The Schedule in a previous bundle's bundle.json, or undefined having said why it can't be read. */
+async function readPreviousSchedule(previousBundle: string, problems: string[]): Promise<unknown[] | undefined> {
+  const file = join(previousBundle, 'bundle.json');
+  let bundle: unknown;
+  try {
+    bundle = JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    problems.push(`previous bundle ${file} can't be read: ${(error as Error).message}`);
+    return undefined;
+  }
+  if (!isObject(bundle) || !Array.isArray(bundle.schedule)) {
+    problems.push(`previous bundle ${file} has no Schedule`);
+    return undefined;
+  }
+  return bundle.schedule;
+}
+
 /** Why a noun's Credit can't be shown, if it can't: every model needs an author, source and license. */
 export function creditProblems(credit: unknown, label: string): string[] {
   if (isMissing(credit)) return [`${label} has no Credit`];
@@ -112,7 +133,7 @@ export function creditProblems(credit: unknown, label: string): string[] {
 export async function buildContent(
   contentDir: string,
   bundleDir: string,
-  { launchDate, now, seed = '' }: BuildOptions,
+  { launchDate, now, previousBundle, seed = '' }: BuildOptions,
 ): Promise<BuildResult> {
   const problems: string[] = [];
   try {
@@ -126,7 +147,7 @@ export async function buildContent(
   const vocabularyInput = await readInput(contentDir, inputFiles.guessVocabulary, problems);
   const answerPoolInput = await readInput(contentDir, inputFiles.answerPool, problems);
   const pinsInput = await readInput(contentDir, inputFiles.pins, problems);
-  const scheduleInput = await readInput(contentDir, inputFiles.schedule, problems);
+  const scheduleInput = previousBundle === undefined ? [] : await readPreviousSchedule(previousBundle, problems);
 
   /** Every file the bundle names, so each is copied once. */
   const files = new Set<string>();
@@ -327,7 +348,7 @@ export async function buildContent(
     pins.set(puzzleNumber, entry.noun as string);
   }
 
-  if (problems.length > 0) return { problems, notices: [] };
+  if (problems.length > 0) return { problems, notices: [], upcoming: [] };
 
   const { schedule, notices } = planSchedule({
     answerPool: new Map(answerPool.map(({ noun, difficultyRating }) => [noun, difficultyRating])),
@@ -346,5 +367,5 @@ export async function buildContent(
   const bundle: ContentBundle = { guessVocabulary, answerPool, schedule };
   // Written last, so a build that dies part-way leaves no bundle the API would load.
   await writeFile(join(bundleDir, 'bundle.json'), `${JSON.stringify(bundle, null, 2)}\n`);
-  return { problems: [], notices };
+  return { problems: [], notices, upcoming: schedule.filter(({ puzzleNumber }) => puzzleNumber >= active) };
 }

@@ -73,7 +73,6 @@ async function contentDir(entry: Json = answerPoolEntry()): Promise<string> {
   }
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify([entry]));
   await writeFile(join(dir, 'pins.json'), '[]');
-  await writeFile(join(dir, 'schedule.json'), JSON.stringify([{ puzzleNumber: 1, noun: 'tea caddy', pinned: false }]));
   return dir;
 }
 
@@ -105,7 +104,7 @@ describe.skipIf(chromiumPath() === undefined)('rendering recorded Stage Cameras 
     expect(model.materials).toHaveLength(2);
 
     const bundleDir = join(dir, 'bundle');
-    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00'];
+    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00', '--first-publish'];
     const built = await run(curationCli, [...clock, dir, bundleDir]);
     expect(built.stderr).toBe('');
     expect(built.code).toBe(0);

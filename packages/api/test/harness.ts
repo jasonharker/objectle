@@ -13,10 +13,12 @@ export const fixtureDir = await buildFixture();
 
 async function buildFixture(): Promise<string> {
   const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-fixture-')), 'bundle');
-  // Built on its Launch Date, which keeps the fixture's short Schedule as written.
+  // Built on its Launch Date, which keeps the short Schedule of the fixture's
+  // previously published bundle as written.
   const { problems } = await buildContent(fileURLToPath(new URL('./fixture/', import.meta.url)), bundleDir, {
     launchDate: '2027-03-01',
     now: new Date('2027-03-01T12:00:00-08:00'),
+    previousBundle: fileURLToPath(new URL('./fixture/published/', import.meta.url)),
   });
   if (problems.length > 0) throw new Error(`the fixture content does not build:\n${problems.join('\n')}`);
   return bundleDir;

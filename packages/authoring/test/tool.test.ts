@@ -35,7 +35,6 @@ async function contentDir(): Promise<string> {
   for (const index of [0, 1]) await writeFile(join(dir, `models/model-${index}.glb`), caddyModel([0.5, 0.2 + index / 10, 0.1]));
   await writeFile(join(dir, 'answer-pool.json'), '[]');
   await writeFile(join(dir, 'pins.json'), '[]');
-  await writeFile(join(dir, 'schedule.json'), '[]');
   return dir;
 }
 
