@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildContent } from '@objectle/curation';
-import { buildApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
+import { buildApp, buildMetricsApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
 
 /** The fixture content bundle, built by the curation build from the fixture content directory. */
@@ -57,6 +57,15 @@ export async function startApi({
     signingKey,
     clientDir,
     resultCounters,
+  });
+}
+
+/** The metrics listener, with the same injected clock and content as `startApi`. */
+export async function startMetrics({ now, launchDate = '2027-03-01', contentDir = fixtureDir }: Options) {
+  return buildMetricsApp({
+    clock: () => new Date(typeof now === 'function' ? now() : now),
+    launchDate,
+    content: await loadContent(contentDir),
   });
 }
 
