@@ -406,6 +406,101 @@ describe('deploy (dry run)', () => {
   });
 });
 
+describe('guard', () => {
+  // Launch Date 2027-03-01: Puzzle Number 14 is 2027-03-14, when Pacific time
+  // springs forward, and 252 is 2027-11-07, when it falls back.
+  const nouns = Array.from({ length: 300 }, (_, index) => `object ${index + 1}`);
+
+  /** A bundle directory whose Schedule assigns `nouns`, with `changes` by Puzzle Number (null drops one). */
+  async function bundle(changes: Record<number, string | null> = {}): Promise<string> {
+    const dir = await tempDir('bundle');
+    const schedule = nouns
+      .map((noun, index) => ({ puzzleNumber: index + 1, noun: changes[index + 1] ?? noun, pinned: false }))
+      .filter(({ puzzleNumber }) => changes[puzzleNumber] !== null);
+    await writeFile(
+      join(dir, 'bundle.json'),
+      JSON.stringify({ launchDate: '2027-03-01', guessVocabulary: [], answerPool: [], schedule }),
+    );
+    return dir;
+  }
+
+  const guard = async (now: string, changes: Record<number, string | null>) =>
+    publish('guard', '--now', now, await bundle(), await bundle(changes));
+
+  test('passes identical Schedules', async () => {
+    const run = await guard('2027-06-01T12:00:00-07:00', {});
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('Puzzle Number 93');
+    expect(run.stderr).toBe('');
+  });
+
+  test('passes a difference only after the active Puzzle Number', async () => {
+    const run = await guard('2027-06-01T12:00:00-07:00', { 94: 'kettle', 200: null });
+    expect(run.status).toBe(0);
+  });
+
+  test('refuses a difference at or before the active Puzzle Number, listing each', async () => {
+    const run = await guard('2027-06-01T12:00:00-07:00', { 1: 'kettle', 50: null, 93: 'lamp', 94: 'kettle' });
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe('');
+    expect(run.stderr.match(/^Puzzle Number \d+/gm)).toEqual(['Puzzle Number 1', 'Puzzle Number 50', 'Puzzle Number 93']);
+    expect(run.stderr).toContain('"kettle"');
+    expect(run.stderr).toContain('not deploying');
+  });
+
+  test('refuses an active Puzzle Number the deployed bundle does not have', async () => {
+    const dir = await tempDir('bundle');
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify({ launchDate: '2027-03-01', schedule: [] }));
+    const run = await publish('guard', '--now', '2027-03-01T12:00:00-08:00', dir, await bundle());
+    expect(run.status).toBe(1);
+    expect(run.stderr.match(/^Puzzle Number \d+/gm)).toEqual(['Puzzle Number 1']);
+  });
+
+  test('passes any difference before launch', async () => {
+    const run = await guard('2027-02-28T23:59:00-08:00', { 1: 'kettle', 2: null });
+    expect(run.status).toBe(0);
+  });
+
+  test.each([
+    ['the last minute before a Pacific midnight', '2027-03-10T07:59:00Z', 9],
+    ['a Pacific midnight', '2027-03-10T08:00:00Z', 10],
+    ['the last minute of the day Pacific time springs forward', '2027-03-15T06:59:00Z', 14],
+    ['the midnight after it springs forward', '2027-03-15T07:00:00Z', 15],
+    ['the last minute of the day Pacific time falls back', '2027-11-08T07:59:00Z', 252],
+    ['the midnight after it falls back', '2027-11-08T08:00:00Z', 253],
+  ])('takes the active Puzzle Number from the instant at %s', async (_, now, active) => {
+    const after = await guard(now, { [active + 1]: 'kettle' });
+    expect(after.status).toBe(0);
+    const at = await guard(now, { [active]: 'kettle', [active + 1]: 'kettle' });
+    expect(at.status).toBe(1);
+    expect(at.stderr.match(/^Puzzle Number \d+/gm)).toEqual([`Puzzle Number ${active}`]);
+  });
+
+  test.each([
+    ['no bundle.json', () => tempDir('bundle')],
+    [
+      'a bundle.json with no Schedule',
+      async () => {
+        const dir = await tempDir('bundle');
+        await writeFile(join(dir, 'bundle.json'), '{"launchDate":"2027-03-01"}');
+        return dir;
+      },
+    ],
+  ])('fails on a bundle directory with %s', async (_, makeDir) => {
+    const run = await publish('guard', '--now', '2027-06-01T12:00:00-07:00', await bundle(), await makeDir());
+    expect(run.status).toBe(1);
+    expect(run.stderr).not.toBe('');
+  });
+
+  test.each([
+    ['with one bundle', ['guard', 'deployed']],
+    ['with a bad instant', ['guard', '--now', 'soon', 'deployed', 'bundle']],
+    ['with --dry-run', ['guard', '--dry-run', 'deployed', 'bundle']],
+  ])('is a usage error %s', async (_, args) => {
+    expect((await publish(...args)).status).toBe(2);
+  });
+});
+
 test('an unknown command is a usage error', async () => {
   expect((await publish('publish')).status).toBe(2);
   expect((await publish()).status).toBe(2);

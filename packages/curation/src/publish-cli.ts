@@ -4,6 +4,7 @@
 //   node packages/curation/src/publish-cli.ts fetch-bundle <image> <dir>
 //   node packages/curation/src/publish-cli.ts image-context <bundle-dir> <context-dir>
 //   node packages/curation/src/publish-cli.ts deploy --dry-run [--now <instant>] <deployment-yaml> <image>
+//   node packages/curation/src/publish-cli.ts guard [--now <instant>] <deployed-bundle-dir> <bundle-dir>
 // read-back prints, from the GitOps repo's objectle Deployment, the Launch
 // Date and the deployed content image (empty when none has ever been
 // published) as LAUNCH_DATE=… and CONTENT_IMAGE=… lines for a shell to source.
@@ -12,13 +13,17 @@
 // image-context writes a from-scratch Dockerfile and its build context for a
 // built content bundle. deploy applies the first-publish rule and prints the
 // deploy commit it would make; it changes nothing (arming the real deploy
-// commit is the launch switch's step). Each exits 0 on success, 1 naming the
+// commit is the launch switch's step). guard is the midnight guard: it refuses
+// a new bundle whose Schedule differs from the deployed bundle's on any Puzzle
+// Number up to the one active at the instant (--now, the real clock by
+// default), listing each. Each exits 0 on success, 1 naming the
 // problem that stopped it on stderr, or 2 on a usage error.
 import { createHash } from 'node:crypto';
 import { constants, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
+import type { ScheduleEntry } from '@objectle/shared';
 import { staysInside } from './build.ts';
 import { dayOf, pacificDateAt } from './schedule.ts';
 
@@ -27,6 +32,7 @@ const usage = [
   '       node packages/curation/src/publish-cli.ts fetch-bundle <image> <dir>',
   '       node packages/curation/src/publish-cli.ts image-context <bundle-dir> <context-dir>',
   '       node packages/curation/src/publish-cli.ts deploy --dry-run [--now <instant>] <deployment-yaml> <image>',
+  '       node packages/curation/src/publish-cli.ts guard [--now <instant>] <deployed-bundle-dir> <bundle-dir>',
 ].join('\n');
 
 /** The comment that marks the content image reference in the Deployment. */
@@ -172,6 +178,58 @@ async function deployDryRun(file: string, image: string, now: Date): Promise<voi
   console.log(`and commit it as\n🚀 Deploy ${image.slice(image.lastIndexOf('/') + 1)}`);
 }
 
+/** A bundle directory's Launch Date and Schedule, as noun by Puzzle Number. */
+async function readSchedule(dir: string): Promise<{ launchDate: string; nouns: Map<number, string> }> {
+  const text = await readFile(join(dir, 'bundle.json'), 'utf8').catch(() =>
+    fail(`${dir} has no bundle.json, so it is not a built content bundle`),
+  );
+  let bundle;
+  try {
+    bundle = JSON.parse(text);
+  } catch {
+    fail(`${dir}/bundle.json is not JSON`);
+  }
+  if (dayOf(bundle?.launchDate) === undefined || !Array.isArray(bundle.schedule)) {
+    fail(`${dir}/bundle.json has no Launch Date or no Schedule`);
+  }
+  return {
+    launchDate: bundle.launchDate,
+    nouns: new Map(bundle.schedule.map(({ puzzleNumber, noun }: ScheduleEntry) => [puzzleNumber, noun])),
+  };
+}
+
+/** The midnight guard: the new Schedule must match the deployed one through the active Puzzle Number. */
+async function guard(deployedDir: string, bundleDir: string, now: Date): Promise<void> {
+  // The deployed Launch Date is the one players count Puzzle Numbers from; a
+  // bundle built for another one is refused by the API at load anyway.
+  const deployed = await readSchedule(deployedDir);
+  const { nouns } = await readSchedule(bundleDir);
+  const active = dayOf(pacificDateAt(now))! - dayOf(deployed.launchDate)! + 1;
+  const name = (noun: string | undefined) => (noun === undefined ? 'nothing' : JSON.stringify(noun));
+  const differences: string[] = [];
+  for (let puzzleNumber = 1; puzzleNumber <= active; puzzleNumber++) {
+    const [was, is] = [deployed.nouns.get(puzzleNumber), nouns.get(puzzleNumber)];
+    if (was !== is) {
+      differences.push(`Puzzle Number ${puzzleNumber} is ${name(was)} in the deployed bundle but ${name(is)} in the new one`);
+    }
+  }
+  if (differences.length > 0) {
+    fail(
+      [
+        ...differences,
+        `midnight guard: the new Schedule changes ${differences.length} Puzzle Number` +
+          `${differences.length === 1 ? '' : 's'} up to the active one, ${active}; not deploying, so the deployed ` +
+          'content image stays and the next publish rebuilds from it',
+      ].join('\n'),
+    );
+  }
+  console.log(
+    active < 1
+      ? 'midnight guard: before launch, so no Puzzle Number is active yet'
+      : `midnight guard: the new Schedule matches the deployed one through the active Puzzle Number ${active}`,
+  );
+}
+
 let parsed;
 try {
   parsed = parseArgs({
@@ -190,8 +248,13 @@ const valid =
   (command === 'read-back' && args.length === 1) ||
   (command === 'fetch-bundle' && args.length === 2 && isImage(args[0])) ||
   (command === 'image-context' && args.length === 2) ||
-  (command === 'deploy' && args.length === 2 && values['dry-run'] === true && isImage(args[1]) && !Number.isNaN(now.getTime()));
-if (!valid || (command !== 'deploy' && (values['dry-run'] !== undefined || values.now !== undefined))) {
+  (command === 'deploy' && args.length === 2 && values['dry-run'] === true && isImage(args[1]) && !Number.isNaN(now.getTime())) ||
+  (command === 'guard' && args.length === 2 && values['dry-run'] === undefined && !Number.isNaN(now.getTime()));
+if (
+  !valid ||
+  (command !== 'deploy' && values['dry-run'] !== undefined) ||
+  (command !== 'deploy' && command !== 'guard' && values.now !== undefined)
+) {
   console.error(usage);
   process.exit(2);
 }
@@ -206,8 +269,10 @@ try {
   } else if (command === 'image-context') {
     await imageContext(args[0], args[1]);
     console.log(`wrote the content image's Dockerfile and build context to ${args[1]}`);
-  } else {
+  } else if (command === 'deploy') {
     await deployDryRun(args[0], args[1], now);
+  } else {
+    await guard(args[0], args[1], now);
   }
 } catch (error) {
   if (!(error instanceof Problem)) throw error;
