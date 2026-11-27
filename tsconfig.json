@@ -11,5 +11,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["packages/*/src", "packages/*/test", "vitest.config.ts", "packages/client/vite.config.ts"]
+  "include": ["packages/*/src", "packages/*/test", "vitest.config.ts", "vitest.global-setup.ts", "packages/client/vite.config.ts"]
 }
