@@ -269,6 +269,12 @@ describe.concurrent('A valid content directory', () => {
     expect(run.status, run.stderr).toBe(0);
   });
 
+  test('records the Launch Date it was built for', async () => {
+    const run = await curate(await contentDir());
+    expect(run.status, run.stderr).toBe(0);
+    expect((await readBundle(run.bundleDir)).launchDate).toBe(launchDate);
+  });
+
   test('a noun absent from the Answer Pool is not in it, even if its entry says so', async () => {
     const run = await curate(
       await contentDir((content) => {

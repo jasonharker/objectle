@@ -8,15 +8,26 @@ import { buildContent } from '@objectle/curation';
 import { buildApp, loadContent, memoryResultCounters, type ResultCounters } from '../src/app.ts';
 import type { GameResponse } from '@objectle/shared';
 
-/** The fixture content bundle, built by the curation build from the fixture content directory. */
-export const fixtureDir = await buildFixture();
+const fixtures = new Map<string, Promise<string>>();
 
-async function buildFixture(): Promise<string> {
+/**
+ * The fixture content bundle built for a Launch Date, by the curation build
+ * from the fixture content directory; the API refuses one built for another.
+ */
+function fixtureFor(launchDate: string): Promise<string> {
+  if (!fixtures.has(launchDate)) fixtures.set(launchDate, buildFixture(launchDate));
+  return fixtures.get(launchDate)!;
+}
+
+/** The fixture content bundle, built for the Launch Date 2027-03-01. */
+export const fixtureDir = await fixtureFor('2027-03-01');
+
+async function buildFixture(launchDate: string): Promise<string> {
   const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-fixture-')), 'bundle');
   // Built on its Launch Date, which keeps the fixture's short Schedule as written.
   const { problems } = await buildContent(fileURLToPath(new URL('./fixture/', import.meta.url)), bundleDir, {
-    launchDate: '2027-03-01',
-    now: new Date('2027-03-01T12:00:00-08:00'),
+    launchDate,
+    now: new Date(`${launchDate}T12:00:00-08:00`),
   });
   if (problems.length > 0) throw new Error(`the fixture content does not build:\n${problems.join('\n')}`);
   return bundleDir;
@@ -29,7 +40,7 @@ export interface Options {
   launchDate?: string;
   signingKey?: string;
   clientDir?: string;
-  /** A content bundle directory other than the fixture. */
+  /** A content bundle directory other than the fixture built for the Launch Date. */
   contentDir?: string;
   /** Result counters to share between API instances or seed with other players' games; fresh in-memory ones by default. */
   resultCounters?: ResultCounters;
@@ -47,13 +58,14 @@ export async function startApi({
   launchDate = '2027-03-01',
   signingKey = testSigningKey,
   clientDir,
-  contentDir = fixtureDir,
+  contentDir,
   resultCounters = memoryResultCounters(),
 }: Options) {
+  contentDir ??= await fixtureFor(launchDate);
   return buildApp({
     clock: () => new Date(typeof now === 'function' ? now() : now),
     launchDate,
-    content: await loadContent(contentDir),
+    content: await loadContent(contentDir, { launchDate }),
     signingKey,
     clientDir,
     resultCounters,

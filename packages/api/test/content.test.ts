@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { ContentBundle } from '@objectle/shared';
 import { loadContent } from '../src/app.ts';
-import { copyFixture, fixtureDir } from './harness.ts';
+import { copyFixture, fixtureDir, startApi } from './harness.ts';
 
 async function editedFixture(edit: (bundle: ContentBundle) => void): Promise<string> {
   const dir = await copyFixture();
@@ -18,6 +18,16 @@ async function editedFixture(edit: (bundle: ContentBundle) => void): Promise<str
 
 test('loads the fixture bundle', async () => {
   await expect(loadContent(await copyFixture())).resolves.toBeDefined();
+});
+
+test('refuses a bundle built for another Launch Date, naming both, and loads one built for the configured one', async () => {
+  // The fixture is built for 2027-03-01; the Launch Date's one source is the API's configuration (ADR-0008).
+  const now = '2027-03-01T20:00:00Z';
+  await expect(startApi({ now, launchDate: '2027-03-02', contentDir: fixtureDir })).rejects.toThrow(
+    /Launch Date 2027-03-01.*configured Launch Date 2027-03-02/,
+  );
+  const api = await startApi({ now, launchDate: '2027-03-01', contentDir: fixtureDir });
+  expect((await api.inject({ method: 'POST', url: '/api/game', payload: {} })).statusCode).toBe(200);
 });
 
 test('refuses a Schedule entry whose noun is not in the Answer Pool', async () => {

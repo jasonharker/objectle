@@ -9,6 +9,7 @@ const app = buildApp({
   clock: () => new Date(),
   launchDate: config.launchDate,
   content: await loadContent(config.contentDir, {
+    launchDate: config.launchDate,
     activePuzzleNumber: puzzleNumberAt(new Date(), config.launchDate),
   }),
   signingKey: config.signingKey,

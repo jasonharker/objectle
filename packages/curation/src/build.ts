@@ -343,7 +343,7 @@ export async function buildContent(
     await mkdir(dirname(join(bundleDir, file)), { recursive: true });
     await copyFile(join(contentDir, file), join(bundleDir, file));
   }
-  const bundle: ContentBundle = { guessVocabulary, answerPool, schedule };
+  const bundle: ContentBundle = { launchDate, guessVocabulary, answerPool, schedule };
   // Written last, so a build that dies part-way leaves no bundle the API would load.
   await writeFile(join(bundleDir, 'bundle.json'), `${JSON.stringify(bundle, null, 2)}\n`);
   return { problems: [], notices };
