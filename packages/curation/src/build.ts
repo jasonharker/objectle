@@ -7,10 +7,14 @@
 // membership is having an entry in answer-pool.json. Each Reveal Stage lists
 // its asset files as given, checked against the ADR-0006 stage asset format;
 // the stage-authoring tool (packages/authoring) renders them from the Stage
-// Cameras it records beside them, which the build ignores. schedule.json is the
-// previously published Schedule: the bundle's schedule, copied back when it is
-// published. The build extends it around the Pins in pins.json ({ date, noun },
-// by Pacific date) by ADR-0007.
+// Cameras it records beside them, with each stage's render fingerprint, which
+// the build recomputes to refuse a stage rendered from anything other than the
+// current model, Stage Camera, render settings and render code. The previously
+// published Schedule is not a curation input: it is the schedule in the
+// bundle.json of the previous bundle, the one being served (ADR-0008), or
+// empty on a first publish. The build extends it around the Pins in pins.json
+// ({ date, noun }, by Pacific date) by ADR-0007; a Pin whose date has arrived
+// matters only if that Schedule did not honour it.
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
@@ -24,6 +28,7 @@ import {
   type GuessVocabularyEntry,
   type ScheduleEntry,
 } from '@objectle/shared';
+import { stageFingerprints, type RenderFingerprint } from '@objectle/shared/render-fingerprint';
 import { stageAssetProblems } from '@objectle/shared/stage-assets';
 import { dayOf, pacificDateAt, planSchedule } from './schedule.ts';
 
@@ -31,7 +36,6 @@ export const inputFiles = {
   guessVocabulary: 'guess-vocabulary.json',
   answerPool: 'answer-pool.json',
   pins: 'pins.json',
-  schedule: 'schedule.json',
 } as const;
 
 export interface BuildOptions {
@@ -39,6 +43,8 @@ export interface BuildOptions {
   launchDate: string;
   /** The instant the build runs at, which decides the active Puzzle Number. */
   now: Date;
+  /** The previous bundle's directory, whose Schedule the build extends; without one, the Schedule starts empty. */
+  previousBundle?: string;
   /** Mixed into the shuffle that breaks ties between equally eligible objects. */
   seed?: string;
 }
@@ -48,6 +54,8 @@ export interface BuildResult {
   problems: string[];
   /** What a passing build reports: a Schedule shortfall and each Difficulty Pattern substitution. */
   notices: string[];
+  /** A passing build's Schedule from the active Puzzle Number on (from Puzzle Number 1 before launch). */
+  upcoming: ScheduleEntry[];
 }
 
 type Json = Record<string, unknown>;
@@ -65,6 +73,22 @@ const oneOf = <T extends string>(set: readonly T[], value: unknown): value is T 
  * does; decoding every stage-1 image would only repeat its answer.
  */
 const showsBackground = (webp: Buffer) => ((webp.readUInt32LE(21) >>> 28) & 1) === 1;
+
+/**
+ * Why a Reveal Stage's recorded render fingerprint is not `current`, as the
+ * end of a sentence about the stage; undefined if it is.
+ */
+function staleness(recorded: unknown, current: RenderFingerprint): string | undefined {
+  if (!isObject(recorded)) return 'has no render fingerprint; render it with the stage-authoring tool';
+  const changed = (key: keyof RenderFingerprint) => recorded[key] !== current[key];
+  const from = [changed('model') && 'model', changed('stageCamera') && 'Stage Camera'].filter(Boolean).join(' and ');
+  const what = [
+    from && `from another ${from}`,
+    changed('renderSettings') && 'with other render settings',
+    changed('renderCode') && 'by other render code',
+  ].filter(Boolean);
+  return what.length === 0 ? undefined : `was rendered ${what.join(', ')}; render it again with the stage-authoring tool`;
+}
 
 /** Whether a path names a file inside the content directory, so it lands inside the bundle directory too. */
 export function staysInside(path: string): boolean {
@@ -94,6 +118,32 @@ export async function readInput(contentDir: string, file: string, problems: stri
   return value;
 }
 
+/** The Schedule in a previous bundle's bundle.json, or undefined having said why it can't be read. */
+async function readPreviousSchedule(
+  previousBundle: string,
+  launchDate: string,
+  problems: string[],
+): Promise<unknown[] | undefined> {
+  const file = join(previousBundle, 'bundle.json');
+  let bundle: unknown;
+  try {
+    bundle = JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    problems.push(`previous bundle ${file} can't be read: ${(error as Error).message}`);
+    return undefined;
+  }
+  if (!isObject(bundle) || !Array.isArray(bundle.schedule)) {
+    problems.push(`previous bundle ${file} has no Schedule`);
+    return undefined;
+  }
+  // Its Puzzle Numbers count from its own Launch Date, so they mean other days.
+  if (bundle.launchDate !== launchDate) {
+    problems.push(`previous bundle ${file} is built for Launch Date ${bundle.launchDate}, not ${launchDate}`);
+    return undefined;
+  }
+  return bundle.schedule;
+}
+
 /** Why a noun's Credit can't be shown, if it can't: every model needs an author, source and license. */
 export function creditProblems(credit: unknown, label: string): string[] {
   if (isMissing(credit)) return [`${label} has no Credit`];
@@ -112,7 +162,7 @@ export function creditProblems(credit: unknown, label: string): string[] {
 export async function buildContent(
   contentDir: string,
   bundleDir: string,
-  { launchDate, now, seed = '' }: BuildOptions,
+  { launchDate, now, previousBundle, seed = '' }: BuildOptions,
 ): Promise<BuildResult> {
   const problems: string[] = [];
   try {
@@ -126,7 +176,7 @@ export async function buildContent(
   const vocabularyInput = await readInput(contentDir, inputFiles.guessVocabulary, problems);
   const answerPoolInput = await readInput(contentDir, inputFiles.answerPool, problems);
   const pinsInput = await readInput(contentDir, inputFiles.pins, problems);
-  const scheduleInput = await readInput(contentDir, inputFiles.schedule, problems);
+  const scheduleInput = previousBundle === undefined ? [] : await readPreviousSchedule(previousBundle, launchDate, problems);
 
   /** Every file the bundle names, so each is copied once. */
   const files = new Set<string>();
@@ -156,6 +206,8 @@ export async function buildContent(
   const names = new Set<string>();
   /** Model paths by the hash of their bytes: a stage asset with a model's bytes would match its Ghost. */
   const modelsByHash = new Map<string, string>();
+  /** Each noun's model bytes, which its Reveal Stages' render fingerprints cover. */
+  const modelBytes = new Map<string, Buffer>();
   for (const [index, entry] of (vocabularyInput ?? []).entries()) {
     if (!isObject(entry) || !isText(entry.name)) {
       problems.push(`Guess Vocabulary entry ${index + 1} has no name`);
@@ -169,7 +221,10 @@ export async function buildContent(
     if (isMissing(model)) problems.push(`${label} has no model`);
     else {
       const bytes = await check(model, 'model', label);
-      if (bytes !== undefined) modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+      if (bytes !== undefined) {
+        modelsByHash.set(createHash('sha256').update(bytes).digest('hex'), model as string);
+        modelBytes.set(name, bytes);
+      }
     }
 
     if (isMissing(category)) problems.push(`${label} has no Category`);
@@ -227,10 +282,19 @@ export async function buildContent(
       if (revealStages.length !== revealStageCount) {
         problems.push(`${label} has ${revealStages.length} Reveal Stages, not ${revealStageCount}`);
       }
+      const model = modelBytes.get(noun);
+      const fingerprints =
+        model === undefined
+          ? undefined
+          : await stageFingerprints(model, revealStages.map((stage) => (isObject(stage) ? stage.stageCamera : undefined)));
       for (const [stageIndex, stage] of revealStages.entries()) {
         const stageLabel = `${label} Reveal Stage ${stageIndex + 1}`;
         const assets: unknown[] = isObject(stage) && Array.isArray(stage.assets) ? stage.assets : [];
         if (assets.length === 0) problems.push(`${stageLabel} has no assets`);
+        else if (fingerprints?.[stageIndex] !== undefined) {
+          const stale = staleness(isObject(stage) ? stage.fingerprint : undefined, fingerprints[stageIndex]);
+          if (stale !== undefined) problems.push(`${stageLabel} ${stale}`);
+        }
         for (const asset of assets) {
           const bytes = await check(asset, 'asset', stageLabel);
           if (bytes === undefined) continue;
@@ -301,7 +365,8 @@ export async function buildContent(
     previous.push({ puzzleNumber, noun: entry.noun as string, pinned: entry.pinned === true });
   }
 
-  /** Pinned nouns by Puzzle Number. */
+  const previousNouns = new Map(previous.map(({ puzzleNumber, noun }) => [puzzleNumber, noun]));
+  /** Pinned nouns by Puzzle Number, after the active one. */
   const pins = new Map<number, string>();
   /** Every Pin's date, so a date Pinned twice is reported once. */
   const pinDates = new Set<string>();
@@ -315,19 +380,33 @@ export async function buildContent(
     const label = `Pin on ${date as string}`;
     if (pinDates.has(date as string)) problems.push(`${date as string} has more than one Pin`);
     pinDates.add(date as string);
+    const puzzleNumber = launchDay === undefined || Number.isNaN(active) ? NaN : day - launchDay + 1;
+    // A Pin whose date has arrived is history once the previous Schedule
+    // honoured it: kept as published, whatever the Answer Pool now holds, and
+    // its Repeat Gap carried by that Schedule entry (ADR-0007).
+    if (
+      isText(entry.noun) &&
+      puzzleNumber >= 1 &&
+      puzzleNumber <= active &&
+      previousNouns.get(puzzleNumber) === entry.noun
+    ) {
+      continue;
+    }
     if (!isText(entry.noun)) problems.push(`${label} has no noun`);
     else if (answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun)) {
       problems.push(`${label} is to ${JSON.stringify(entry.noun)}, which is not in the Answer Pool`);
     }
-    if (launchDay === undefined || Number.isNaN(active)) continue;
-    const puzzleNumber = day - launchDay + 1;
+    if (Number.isNaN(puzzleNumber)) continue;
+    const unhonoured =
+      `(Puzzle Number ${puzzleNumber}), but the previous Schedule does not assign ` +
+      `${JSON.stringify(entry.noun)} to it`;
     if (puzzleNumber < 1) problems.push(`${label} is before the Launch Date`);
-    else if (puzzleNumber < active) problems.push(`${label} is on a past date (Puzzle Number ${puzzleNumber})`);
-    else if (puzzleNumber === active) problems.push(`${label} is on the active date (Puzzle Number ${puzzleNumber})`);
+    else if (puzzleNumber < active) problems.push(`${label} is on a past date ${unhonoured}`);
+    else if (puzzleNumber === active) problems.push(`${label} is on the active date ${unhonoured}`);
     pins.set(puzzleNumber, entry.noun as string);
   }
 
-  if (problems.length > 0) return { problems, notices: [] };
+  if (problems.length > 0) return { problems, notices: [], upcoming: [] };
 
   const { schedule, notices } = planSchedule({
     answerPool: new Map(answerPool.map(({ noun, difficultyRating }) => [noun, difficultyRating])),
@@ -343,8 +422,8 @@ export async function buildContent(
     await mkdir(dirname(join(bundleDir, file)), { recursive: true });
     await copyFile(join(contentDir, file), join(bundleDir, file));
   }
-  const bundle: ContentBundle = { guessVocabulary, answerPool, schedule };
+  const bundle: ContentBundle = { launchDate, guessVocabulary, answerPool, schedule };
   // Written last, so a build that dies part-way leaves no bundle the API would load.
   await writeFile(join(bundleDir, 'bundle.json'), `${JSON.stringify(bundle, null, 2)}\n`);
-  return { problems: [], notices };
+  return { problems: [], notices, upcoming: schedule.filter(({ puzzleNumber }) => puzzleNumber >= active) };
 }

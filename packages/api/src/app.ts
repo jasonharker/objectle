@@ -238,3 +238,35 @@ export function buildApp({
 
   return app;
 }
+
+/**
+ * The metrics listener, on its own port and not routed publicly, so players
+ * cannot read how much Schedule is left. One gauge (ADR-0008): the Puzzle
+ * Numbers the served Schedule covers past the active one, recomputed from the
+ * clock on every scrape; before launch it counts from Puzzle Number 1, and
+ * once the Schedule has run out it is zero or negative.
+ */
+export function buildMetricsApp({ clock, launchDate, content }: Pick<Dependencies, 'clock' | 'launchDate' | 'content'>) {
+  const app = Fastify();
+  const scheduled = new Set(content.bundle.schedule.map(({ puzzleNumber }) => puzzleNumber));
+
+  app.get('/metrics', async (_request, reply) => {
+    // Only the unbroken run from the active Puzzle Number counts: a shortfall
+    // can leave holes before a later Pin. With the active one unscheduled, it
+    // counts back to the last scheduled one before it, so it goes negative.
+    const active = Math.max(1, puzzleNumberAt(clock(), launchDate));
+    let end = active;
+    if (scheduled.has(end)) while (scheduled.has(end + 1)) end++;
+    else while (end > 0 && !scheduled.has(end)) end--;
+    const remaining = end - active;
+    return reply
+      .type('text/plain; version=0.0.4; charset=utf-8')
+      .send(
+        '# HELP objectle_schedule_remaining_puzzle_numbers Puzzle Numbers the served Schedule covers past the active one.\n' +
+          '# TYPE objectle_schedule_remaining_puzzle_numbers gauge\n' +
+          `objectle_schedule_remaining_puzzle_numbers ${remaining}\n`,
+      );
+  });
+
+  return app;
+}

@@ -73,7 +73,6 @@ async function contentDir(entry: Json = answerPoolEntry()): Promise<string> {
   }
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify([entry]));
   await writeFile(join(dir, 'pins.json'), '[]');
-  await writeFile(join(dir, 'schedule.json'), JSON.stringify([{ puzzleNumber: 1, noun: 'tea caddy', pinned: false }]));
   return dir;
 }
 
@@ -105,7 +104,7 @@ describe.skipIf(chromiumPath() === undefined)('rendering recorded Stage Cameras 
     expect(model.materials).toHaveLength(2);
 
     const bundleDir = join(dir, 'bundle');
-    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00'];
+    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00', '--first-publish'];
     const built = await run(curationCli, [...clock, dir, bundleDir]);
     expect(built.stderr).toBe('');
     expect(built.code).toBe(0);
@@ -128,6 +127,20 @@ describe.skipIf(chromiumPath() === undefined)('rendering recorded Stage Cameras 
       game = (await api.inject({ method: 'POST', url: '/api/guess', payload: { playToken: game.playToken, guess } })).json();
     }
     expect(game.stageAssets.map(({ mediaType }) => mediaType)).toEqual(['model/gltf-binary']);
+  });
+
+  test('records render fingerprints that a re-prepared model makes the curation build reject', async () => {
+    const dir = await contentDir();
+    expect((await run(authoringCli, ['render', dir])).code).toBe(0);
+    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00', '--first-publish'];
+    expect((await run(curationCli, [...clock, dir, join(dir, 'bundle')])).code).toBe(0);
+
+    await writeFile(join(dir, 'models/tea-caddy.glb'), caddyModel([0.2, 0.5, 0.1]));
+    const built = await run(curationCli, [...clock, dir, join(dir, 'stale-bundle')]);
+    expect(built.code).toBe(1);
+    for (const stage of [1, 2, 3, 4, 5, 6]) {
+      expect(built.stderr).toContain(`"tea caddy" Reveal Stage ${stage} was rendered from another model;`);
+    }
   });
 
   test('refuses a Reveal Stage 1 Stage Camera that frames background, and writes nothing', async () => {

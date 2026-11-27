@@ -1,11 +1,13 @@
 // What the stage-authoring tool reads from a content directory and writes
 // back to it. Terms follow GLOSSARY.md. Saving records an Answer Pool
 // object's Stage Cameras, Difficulty Rating and text marks in
-// answer-pool.json, and its six Reveal Stage assets beside it, in the shape
-// the curation build reads (packages/curation/src/build.ts). Node-only.
+// answer-pool.json, and its six Reveal Stage assets beside it with their
+// render fingerprints, in the shape the curation build reads
+// (packages/curation/src/build.ts). Node-only.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { difficultyRatings, revealStageCount, type DifficultyRating } from '@objectle/shared';
+import { stageFingerprints } from '@objectle/shared/render-fingerprint';
 import { stageAssetProblems } from '@objectle/shared/stage-assets';
 import { isStageCamera, isTextMark, type StageCamera, type TextMark } from './stage-camera.ts';
 
@@ -114,9 +116,21 @@ export async function saveAuthoredObject(
   object: AuthoredObject,
   { images, model }: RenderedAssets,
 ): Promise<string[]> {
-  const names = new Set((await readArray(contentDir, 'guess-vocabulary.json')).map(({ name }) => name));
+  const vocabulary = await readArray(contentDir, 'guess-vocabulary.json');
+  const names = new Set(vocabulary.map(({ name }) => name));
   const answerPool = await readArray(contentDir, 'answer-pool.json', []);
   const problems = authoredProblems(object, names);
+  // ponytail: the model is read at save, not when it was rendered; re-preparing it while the tool has the old one
+  // loaded records the new bytes. Send the rendered bytes' digest with the save if that race ever bites.
+  const modelPath = vocabulary.find(({ name }) => name === object.noun)?.model;
+  const modelBytes = modelPath === undefined ? undefined : await readFile(join(contentDir, modelPath)).catch(() => undefined);
+  if (modelBytes === undefined) {
+    problems.push(
+      modelPath === undefined
+        ? `${object.noun} has no model in the Guess Vocabulary`
+        : `the model of ${object.noun}, ${modelPath}, cannot be read`,
+    );
+  }
   const assets = [...images, model].map((bytes) => Buffer.from(bytes));
   if (assets.length !== revealStageCount) problems.push(`there are ${assets.length} Reveal Stage assets, not ${revealStageCount}`);
   assets.forEach((bytes, index) => {
@@ -135,6 +149,7 @@ export async function saveAuthoredObject(
   }
   if (problems.length > 0) return problems;
 
+  const fingerprints = await stageFingerprints(modelBytes!, object.stageCameras);
   await mkdir(join(contentDir, 'assets'), { recursive: true });
   await Promise.all(paths.map((path, index) => writeFile(join(contentDir, path), assets[index])));
 
@@ -143,7 +158,9 @@ export async function saveAuthoredObject(
     difficultyRating: object.difficultyRating,
     textMarks: object.textMarks,
     revealStages: paths.map((path, index) =>
-      index < stageCameraCount ? { stageCamera: object.stageCameras[index], assets: [path] } : { assets: [path] },
+      index < stageCameraCount
+        ? { stageCamera: object.stageCameras[index], assets: [path], fingerprint: fingerprints[index] }
+        : { assets: [path], fingerprint: fingerprints[index] },
     ),
   };
   const index = answerPool.findIndex(({ noun }) => noun === object.noun);

@@ -1,10 +1,11 @@
 // The stage-authoring tool's content seam: what it reads from a content
 // directory and what saving an authored Answer Pool object writes there.
 // Tests check only the files written and the problems returned.
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { stageFingerprints } from '@objectle/shared/render-fingerprint';
 import { readAuthoringContent, saveAuthoredObject, type AuthoredObject } from '../src/content-store.ts';
 
 type Json = any;
@@ -63,8 +64,14 @@ async function contentDir(answerPool: Json[] = []): Promise<string> {
   }));
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(vocabulary));
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify(answerPool));
-  await mkdir(join(dir, 'models'));
+  await writeModels(dir, vocabulary);
   return dir;
+}
+
+/** A model file for each noun, whose bytes the render fingerprints cover. */
+async function writeModels(dir: string, vocabulary: { name: string; model: string }[]) {
+  await mkdir(join(dir, 'models'));
+  for (const { name, model } of vocabulary) await writeFile(join(dir, model), glb({ asset: { version: '2.0' }, extras: name }));
 }
 
 const readJson = async (dir: string, file: string) => JSON.parse(await readFile(join(dir, file), 'utf8'));
@@ -92,6 +99,28 @@ describe('saving an authored Answer Pool object', () => {
       const expected = index < 5 ? assets('wooden spoon').images[index] : assets('wooden spoon').model;
       expect(await readFile(join(dir, stage.assets[0]))).toEqual(expected);
     }
+    // Each stage records what it was rendered from, which the curation build recomputes.
+    const model = await readFile(join(dir, 'models/wooden-spoon.glb'));
+    expect(entry.revealStages.map((stage: Json) => stage.fingerprint)).toEqual(
+      await stageFingerprints(model, authored('wooden spoon').stageCameras),
+    );
+  });
+
+  test('refuses an object whose model cannot be read, since its render fingerprints cover the model', async () => {
+    const dir = await contentDir();
+    await rm(join(dir, 'models/teapot.glb'));
+    const problems = await saveAuthoredObject(dir, authored('teapot'), assets('teapot'));
+    expect(problems).toEqual(['the model of teapot, models/teapot.glb, cannot be read']);
+    expect(await readJson(dir, 'answer-pool.json')).toEqual([]);
+  });
+
+  test('refuses an object whose Guess Vocabulary entry names no model', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'objectle-authoring-'));
+    await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify([{ name: 'teapot' }]));
+    await writeFile(join(dir, 'answer-pool.json'), '[]');
+    const problems = await saveAuthoredObject(dir, authored('teapot'), assets('teapot'));
+    expect(problems).toEqual(['teapot has no model in the Guess Vocabulary']);
+    expect(await readJson(dir, 'answer-pool.json')).toEqual([]);
   });
 
   test('replaces the object’s earlier entry and keeps every other entry as it was', async () => {
@@ -108,6 +137,7 @@ describe('saving an authored Answer Pool object', () => {
   test('adds a Guess Vocabulary noun to the Answer Pool, creating answer-pool.json if there is none', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'objectle-authoring-'));
     await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify([{ name: 'teapot', model: 'models/teapot.glb' }]));
+    await writeModels(dir, [{ name: 'teapot', model: 'models/teapot.glb' }]);
     expect(await saveAuthoredObject(dir, authored('teapot'), assets('teapot'))).toEqual([]);
     expect((await readJson(dir, 'answer-pool.json')).map((entry: Json) => entry.noun)).toEqual(['teapot']);
   });
@@ -144,6 +174,7 @@ describe('saving an authored Answer Pool object', () => {
     const dir = await mkdtemp(join(tmpdir(), 'objectle-authoring-'));
     const vocabulary = ['pine cone', 'pine-cone'].map((name) => ({ name, model: `models/${name}.glb` }));
     await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(vocabulary));
+    await writeModels(dir, vocabulary);
     expect(await saveAuthoredObject(dir, authored('pine cone'), assets('pine cone'))).toEqual([]);
     const before = await readJson(dir, 'answer-pool.json');
 

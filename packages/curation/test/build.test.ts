@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import type { ContentBundle } from '@objectle/shared';
+import { renderCodeVersion, renderSettings, stageFingerprints } from '@objectle/shared/render-fingerprint';
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 
@@ -18,6 +19,7 @@ interface ContentInput {
   guessVocabulary: Json[];
   answerPool: Json[];
   pins: Json[];
+  /** The previously published Schedule: the Schedule of the content directory's published bundle. */
   schedule: Json[];
 }
 
@@ -99,13 +101,27 @@ function fileBytes(path: string): Buffer {
   return Buffer.concat([header, json, binHeader, bin]);
 }
 
+/** A distinct Stage Camera for each of Reveal Stages 1-5. */
+const stageCamera = (revealStage: number) => ({ position: [0, 0.1, 0.2 * revealStage], target: [0, 0, 0], fov: 30 });
+
+/** What a Reveal Stage was rendered with, if not the current render settings and render code. */
+type RenderedWith = Parameters<typeof stageFingerprints>[2];
+
 /**
  * Write a content directory: the curation input files plus a distinct model
- * and stage asset file for every path the valid content names. `added`
- * Answer Pool objects join the valid content, files included. `edit` changes
- * the JSON after the files are written, so it can point at missing files.
+ * and stage asset file for every path the valid content names, and in it the
+ * previously published bundle (see `published`) holding the Schedule. `added`
+ * Answer Pool objects join the valid content, files included. Every Reveal
+ * Stage of the content is recorded as the stage-authoring tool renders it,
+ * with a Stage Camera and the render fingerprint of `renderedWith`. `edit`
+ * changes the JSON after that, so it can point at missing files or move a
+ * Stage Camera after its stage was rendered.
  */
-async function contentDir(edit: (content: ContentInput) => void = () => {}, added: Added[] = []): Promise<string> {
+async function contentDir(
+  edit: (content: ContentInput) => void = () => {},
+  added: Added[] = [],
+  renderedWith: RenderedWith = {},
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'objectle-curation-'));
   const content = validContent();
   for (const [name, difficultyRating] of added) {
@@ -120,13 +136,24 @@ async function contentDir(edit: (content: ContentInput) => void = () => {}, adde
     await mkdir(dirname(join(dir, file)), { recursive: true });
     await writeFile(join(dir, file), fileBytes(file));
   }
+  for (const entry of content.answerPool) {
+    const stages: Json[] = entry.revealStages;
+    stages.slice(0, 5).forEach((stage, index) => (stage.stageCamera = stageCamera(index + 1)));
+    const model = fileBytes(find(content, entry.noun).model);
+    const fingerprints = await stageFingerprints(model, stages.map((stage) => stage.stageCamera), renderedWith);
+    stages.forEach((stage, index) => (stage.fingerprint = fingerprints[index]));
+  }
   edit(content);
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(content.guessVocabulary));
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify(content.answerPool));
   await writeFile(join(dir, 'pins.json'), JSON.stringify(content.pins));
-  await writeFile(join(dir, 'schedule.json'), JSON.stringify(content.schedule));
+  await mkdir(published(dir));
+  await writeFile(join(published(dir), 'bundle.json'), JSON.stringify({ launchDate, schedule: content.schedule }));
   return dir;
 }
+
+/** Where a test content directory keeps its previously published bundle, as a curator's copy of the deployed one. */
+const published = (dir: string) => join(dir, 'published');
 
 /** The Launch Date every test builds with unless it says otherwise: a Monday. */
 const launchDate = '2027-03-01';
@@ -154,16 +181,32 @@ interface Run {
 
 interface CurateOptions {
   bundleDir?: string;
+  /**
+   * The directory of the previous bundle the build extends, the content
+   * directory's by default; 'first publish' passes the first-publish flag
+   * instead, and 'none' passes neither.
+   */
+  previousBundle?: string;
   /** The injected clock: the instant the build runs at. Puzzle Number 1 by default. */
   now?: string;
   seed?: string;
 }
 
 /** Run the curation build's command-line tool on a content directory; the real clock is never read. */
-async function curate(dir: string, { bundleDir, now = during(1), seed }: CurateOptions = {}): Promise<Run> {
+async function curate(
+  dir: string,
+  { bundleDir, previousBundle = published(dir), now = during(1), seed }: CurateOptions = {},
+): Promise<Run> {
   bundleDir ??= join(await mkdtemp(join(tmpdir(), 'objectle-bundle-')), 'bundle');
   const out = bundleDir;
-  const args = ['--launch-date', launchDate, '--now', now, ...(seed === undefined ? [] : ['--seed', seed])];
+  const previous =
+    previousBundle === 'first publish'
+      ? ['--first-publish']
+      : previousBundle === 'none'
+        ? []
+        : ['--previous-bundle', previousBundle];
+  const args = ['--launch-date', launchDate, '--now', now, ...previous];
+  if (seed !== undefined) args.push('--seed', seed);
   return new Promise((resolve) => {
     execFile(process.execPath, [cli, ...args, dir, out], (error, stdout, stderr) => {
       resolve({ status: error ? Number(error.code) : 0, stdout, stderr, bundleDir: out });
@@ -267,6 +310,12 @@ describe.concurrent('A valid content directory', () => {
       }),
     );
     expect(run.status, run.stderr).toBe(0);
+  });
+
+  test('records the Launch Date it was built for', async () => {
+    const run = await curate(await contentDir());
+    expect(run.status, run.stderr).toBe(0);
+    expect((await readBundle(run.bundleDir)).launchDate).toBe(launchDate);
   });
 
   test('a noun absent from the Answer Pool is not in it, even if its entry says so', async () => {
@@ -479,12 +528,85 @@ describe.concurrent('A Reveal Stage asset (ADR-0006)', () => {
   });
 });
 
-/** Copy a bundle's Schedule back into a content directory, as publishing it does. */
+/** Every Reveal Stage a failed build lists as stale or unfingerprinted, as `noun stage`. */
+const staleStages = (stderr: string) =>
+  [...stderr.matchAll(/"([^"]+)" Reveal Stage (\d) (?:was rendered|has no render fingerprint)/g)].map(
+    ([, noun, stage]) => `${noun} ${stage}`,
+  );
+
+const allStages = (noun: string) => [1, 2, 3, 4, 5, 6].map((stage) => `${noun} ${stage}`);
+
+// Each test runs the build once; they run one at a time, as the Schedule tests below do.
+describe('A Reveal Stage’s render fingerprint (ADR-0006)', () => {
+  test('recorded when it was rendered passes, and is left out of the bundle', async () => {
+    const run = await curate(await contentDir());
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.stringify(await readBundle(run.bundleDir))).not.toMatch(/fingerprint|stageCamera/);
+  });
+
+  test('fails every stage of a noun whose model was re-prepared since, naming the model', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'models/teapot.glb'), fileBytes('models/re-prepared-teapot.glb'));
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual(allStages('teapot'));
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 1 was rendered from another model;/);
+  });
+
+  test('fails only the stage whose Stage Camera moved since, naming the Stage Camera', async () => {
+    const stderr = await problems((content) => (findAnswer(content, 'pinecone').revealStages[1].stageCamera.fov = 35));
+    expect(staleStages(stderr)).toEqual(['pinecone 2']);
+    expect(stderr).toMatch(/"pinecone" Reveal Stage 2 was rendered from another Stage Camera;/);
+  });
+
+  test('fails Reveal Stages 5 and 6 when the stage-5 Stage Camera moved, as the stage-6 export carries it', async () => {
+    const stderr = await problems((content) => findAnswer(content, 'teapot').revealStages[4].stageCamera.position[0]++);
+    expect(staleStages(stderr)).toEqual(['teapot 5', 'teapot 6']);
+  });
+
+  test.each([
+    ['resolution', { resolution: 2048 }],
+    ['palette depth', { depth: renderSettings.depth + 1 }],
+    ['black floor', { blackFloor: renderSettings.blackFloor + 0.01 }],
+  ])('fails every stage when the %s changed since, naming the render settings', async (_, changed) => {
+    const dir = await contentDir(() => {}, [], { settings: { ...renderSettings, ...changed } });
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual([...allStages('teapot'), ...allStages('pinecone')]);
+    expect(run.stderr).toMatch(/"teapot" Reveal Stage 3 was rendered with other render settings;/);
+  });
+
+  test('fails every stage when the render code changed since, naming the render code', async () => {
+    const run = await curate(await contentDir(() => {}, [], { renderCode: renderCodeVersion - 1 }));
+    expect(run.status).toBe(1);
+    expect(staleStages(run.stderr)).toEqual([...allStages('teapot'), ...allStages('pinecone')]);
+    expect(run.stderr).toMatch(/"pinecone" Reveal Stage 6 was rendered by other render code;/);
+  });
+
+  test('names everything that changed since', async () => {
+    const dir = await contentDir((content) => (findAnswer(content, 'teapot').revealStages[0].stageCamera.fov = 20), [], {
+      renderCode: renderCodeVersion - 1,
+    });
+    await writeFile(join(dir, 'models/teapot.glb'), fileBytes('models/re-prepared-teapot.glb'));
+    const run = await curate(dir);
+    expect(run.stderr).toMatch(
+      /"teapot" Reveal Stage 1 was rendered from another model and Stage Camera, by other render code; render it again/,
+    );
+  });
+
+  test('that is missing fails that stage alone, telling the curator to render it', async () => {
+    const stderr = await problems((content) => delete findAnswer(content, 'teapot').revealStages[2].fingerprint);
+    expect(staleStages(stderr)).toEqual(['teapot 3']);
+    expect(stderr).toMatch(/"teapot" Reveal Stage 3 has no render fingerprint; render it with the stage-authoring tool/);
+  });
+});
+
+/** Make a build's bundle the content directory's previously published one, as publishing it does. */
 async function publish(run: Run, dir: string): Promise<ContentBundle['schedule']> {
   expect(run.status, run.stderr).toBe(0);
-  const { schedule } = await readBundle(run.bundleDir);
-  await writeFile(join(dir, 'schedule.json'), JSON.stringify(schedule));
-  return schedule;
+  const bundle = await readBundle(run.bundleDir);
+  await writeFile(join(published(dir), 'bundle.json'), JSON.stringify(bundle));
+  return bundle.schedule;
 }
 
 const scheduledOn = (schedule: ContentBundle['schedule'], puzzleNumber: number) =>
@@ -501,7 +623,105 @@ const ratingOf = new Map<string, string>([['teapot', 'easy'], ['pinecone', 'medi
 // The Schedule tests below build a 105-object Answer Pool, often twice, so they
 // run one at a time: run concurrently on a one-CPU CI agent, several builds
 // share each test's timeout and pass it.
+describe.concurrent('The previous bundle (ADR-0008)', () => {
+  test('holds the previously published Schedule; a schedule.json in the content directory is ignored', async () => {
+    const dir = await contentDir();
+    await writeFile(join(dir, 'schedule.json'), JSON.stringify([{ puzzleNumber: 1, noun: 'pinecone', pinned: false }]));
+    const run = await curate(dir);
+    expect(run.status, run.stderr).toBe(0);
+    expect((await readBundle(run.bundleDir)).schedule).toEqual(validContent().schedule);
+  });
+
+  test.each(['none', 'both'])(
+    'given %s of a previous bundle and the first-publish flag, is a usage error and writes nothing',
+    async (given) => {
+      const dir = await contentDir();
+      const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-bundle-')), 'bundle');
+      const run =
+        given === 'none'
+          ? await curate(dir, { bundleDir, previousBundle: 'none' })
+          : await new Promise<Run>((resolve) => {
+              const args = ['--launch-date', launchDate, '--previous-bundle', published(dir), '--first-publish'];
+              execFile(process.execPath, [cli, ...args, dir, bundleDir], (error, stdout, stderr) =>
+                resolve({ status: Number(error?.code ?? 0), stdout, stderr, bundleDir }),
+              );
+            });
+      expect(run.status).toBe(2);
+      expect(run.stderr).toMatch(/usage/i);
+      expect(await exists(join(bundleDir, 'bundle.json'))).toBe(false);
+    },
+  );
+
+  test('is not needed on a first publish, which starts from an empty Schedule', async () => {
+    const run = await curate(await contentDir(), { previousBundle: 'first publish', now: during(5) });
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect(schedule.map(({ puzzleNumber }) => puzzleNumber)).toEqual([5, 6]);
+  });
+
+  test('without a bundle.json fails, naming the file', async () => {
+    const run = await curate(await contentDir(), {
+      previousBundle: await mkdtemp(join(tmpdir(), 'objectle-bundle-')),
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/previous bundle .*bundle\.json/);
+  });
+
+  test.each([
+    ['is not JSON', 'not json'],
+    ['has no Schedule', '{}'],
+    ['has a Schedule that is not a list', '{ "schedule": {} }'],
+  ])('whose bundle.json %s fails, naming the file', async (_, text) => {
+    const dir = await contentDir();
+    await writeFile(join(published(dir), 'bundle.json'), text);
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/previous bundle .*bundle\.json/);
+  });
+
+  test.each([
+    ['another Launch Date', '2027-02-01'],
+    ['no Launch Date', undefined],
+  ])('built for %s fails, naming both dates, rather than starting from an empty Schedule', async (_, built) => {
+    const dir = await contentDir();
+    await writeFile(join(published(dir), 'bundle.json'), JSON.stringify({ launchDate: built, schedule: validContent().schedule }));
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`is built for Launch Date ${built}, not ${launchDate}`);
+    expect(await exists(join(run.bundleDir, 'bundle.json'))).toBe(false);
+  });
+});
+
 describe('The previously published Schedule', () => {
+  test('is listed from the active Puzzle Number on, with dates and Pins, once extended', async () => {
+    const dir = await contentDir((content) => content.pins.push({ date: dateOf(40), noun: 'teacup' }), [
+      ...plenty,
+      ['teacup', 'hard'],
+    ]);
+    await publish(await curate(dir), dir);
+    const run = await curate(dir, { now: during(5) });
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    const line = ({ puzzleNumber, noun, pinned }: ContentBundle['schedule'][number]) =>
+      `Puzzle Number ${puzzleNumber} on ${dateOf(puzzleNumber)}: ${noun}${pinned ? ', Pinned' : ''}`;
+    const upcoming = schedule.filter(({ puzzleNumber }) => puzzleNumber >= 5).map(line);
+    expect(upcoming).toHaveLength(91);
+    expect(upcoming).toContain(`Puzzle Number 40 on ${dateOf(40)}: teacup, Pinned`);
+    expect(run.stdout).toContain(['upcoming Schedule:', ...upcoming].join('\n'));
+    expect(run.stdout).not.toContain('Puzzle Number 4 on');
+  });
+
+  test('keeps the active Puzzle Number as published, even once its Pin is removed', async () => {
+    const dir = await contentDir((content) => (content.schedule[1].pinned = true), [['teacup', 'medium']]);
+    const run = await curate(dir, { now: during(2) });
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)).toEqual({
+      puzzleNumber: 2,
+      noun: 'pinecone',
+      pinned: true,
+    });
+  });
+
   test('naming a noun outside the Answer Pool on the active Puzzle Number fails, naming both', async () => {
     expect(await problems((content) => (content.schedule[0].noun = 'wooden spoon'))).toMatch(
       /Puzzle Number 1 is active and scheduled to "wooden spoon", which is not in the Answer Pool/,
@@ -659,16 +879,78 @@ describe('A Pin', () => {
     );
   });
 
-  test('on a past date fails, naming the date', async () => {
+  // The previously published Schedule has pinecone on Puzzle Number 2, so a
+  // Pin of teapot there was never honoured and now can't be.
+  test('on a past date that the previous Schedule did not honour fails, naming the Pin', async () => {
     expect(
-      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(3) }),
-    ).toContain(`Pin on ${dateOf(2)} is on a past date`);
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }), { now: during(3) }),
+    ).toContain(
+      `Pin on ${dateOf(2)} is on a past date (Puzzle Number 2), but the previous Schedule does not assign "teapot" to it`,
+    );
   });
 
-  test('on the active date fails, naming the date', async () => {
+  test('on the active date that the previous Schedule did not honour fails, naming the Pin', async () => {
     expect(
-      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(2) }),
-    ).toContain(`Pin on ${dateOf(2)} is on the active date`);
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }), { now: during(2) }),
+    ).toContain(
+      `Pin on ${dateOf(2)} is on the active date (Puzzle Number 2), but the previous Schedule does not assign "teapot" to it`,
+    );
+  });
+
+  test('on a past date that the previous Schedule left unassigned fails, naming the Pin', async () => {
+    expect(
+      await problems((content) => content.pins.push({ date: dateOf(3), noun: 'pinecone' }), { now: during(4) }),
+    ).toContain(
+      `Pin on ${dateOf(3)} is on a past date (Puzzle Number 3), but the previous Schedule does not assign "pinecone" to it`,
+    );
+  });
+
+  test.each([
+    ['past', 3],
+    ['active', 2],
+  ])('honoured by the previous Schedule passes on the %s date, keeping it as published', async (_, active) => {
+    const run = await curate(
+      await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), [['teacup', 'medium']]),
+      { now: during(active) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)).toEqual({
+      puzzleNumber: 2,
+      noun: 'pinecone',
+      pinned: false,
+    });
+  });
+
+  test('honoured on a past date passes after its object leaves the Answer Pool', async () => {
+    const run = await curate(
+      await contentDir((content) => {
+        content.pins.push({ date: dateOf(2), noun: 'pinecone' });
+        content.answerPool = content.answerPool.filter((entry) => entry.noun !== 'pinecone');
+      }),
+      { now: during(3) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)!.noun).toBe('pinecone');
+  });
+
+  test.each([
+    ['kept', true],
+    ['deleted', false],
+  ])('honoured on a past date and then %s keeps its object out of generated days within the Repeat Gap', async (_, kept) => {
+    const run = await curate(
+      await contentDir(
+        (content) => {
+          content.schedule[1] = { puzzleNumber: 2, noun: 'teacup', pinned: true };
+          if (kept) content.pins.push({ date: dateOf(2), noun: 'teacup' });
+        },
+        [['teacup', 'medium']],
+      ),
+      { now: during(3) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect(schedule.filter(({ noun }) => noun === 'teacup')).toEqual([{ puzzleNumber: 2, noun: 'teacup', pinned: true }]);
+    expect(scheduledOn(schedule, 3)!.noun).toBe('pinecone');
   });
 
   test('before the Launch Date fails, naming the date', async () => {
@@ -680,7 +962,7 @@ describe('A Pin', () => {
   });
 
   test('dates turn over at midnight Pacific, not UTC', async () => {
-    const dir = await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }));
+    const dir = await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }));
     // 23:59 Pacific on the Launch Date, already the next day in UTC.
     expect((await curate(dir, { now: `${dateOf(2)}T07:59:00Z` })).status).toBe(0);
     expect((await curate(dir, { now: `${dateOf(2)}T08:00:00Z` })).status).toBe(1);
@@ -703,6 +985,12 @@ describe('A Pin', () => {
   test('without a noun fails', async () => {
     expect(await problems((content) => content.pins.push({ date: dateOf(10) }))).toContain(
       `Pin on ${dateOf(10)} has no noun`,
+    );
+  });
+
+  test('without a noun on a past date the previous Schedule left unassigned fails', async () => {
+    expect(await problems((content) => content.pins.push({ date: dateOf(3) }), { now: during(4) })).toContain(
+      `Pin on ${dateOf(3)} has no noun`,
     );
   });
 });
@@ -839,7 +1127,7 @@ describe('Schedule generation', () => {
 });
 
 describe.concurrent('Content input files', () => {
-  const inputFiles = ['guess-vocabulary.json', 'answer-pool.json', 'pins.json', 'schedule.json'];
+  const inputFiles = ['guess-vocabulary.json', 'answer-pool.json', 'pins.json'];
 
   test.each(inputFiles)('a missing %s fails, naming the file', async (file) => {
     const dir = await contentDir();
