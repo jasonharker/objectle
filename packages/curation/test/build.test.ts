@@ -659,16 +659,78 @@ describe('A Pin', () => {
     );
   });
 
-  test('on a past date fails, naming the date', async () => {
+  // The previously published Schedule has pinecone on Puzzle Number 2, so a
+  // Pin of teapot there was never honoured and now can't be.
+  test('on a past date that the previous Schedule did not honour fails, naming the Pin', async () => {
     expect(
-      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(3) }),
-    ).toContain(`Pin on ${dateOf(2)} is on a past date`);
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }), { now: during(3) }),
+    ).toContain(
+      `Pin on ${dateOf(2)} is on a past date (Puzzle Number 2), but the previous Schedule does not assign "teapot" to it`,
+    );
   });
 
-  test('on the active date fails, naming the date', async () => {
+  test('on the active date that the previous Schedule did not honour fails, naming the Pin', async () => {
     expect(
-      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), { now: during(2) }),
-    ).toContain(`Pin on ${dateOf(2)} is on the active date`);
+      await problems((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }), { now: during(2) }),
+    ).toContain(
+      `Pin on ${dateOf(2)} is on the active date (Puzzle Number 2), but the previous Schedule does not assign "teapot" to it`,
+    );
+  });
+
+  test('on a past date that the previous Schedule left unassigned fails, naming the Pin', async () => {
+    expect(
+      await problems((content) => content.pins.push({ date: dateOf(3), noun: 'pinecone' }), { now: during(4) }),
+    ).toContain(
+      `Pin on ${dateOf(3)} is on a past date (Puzzle Number 3), but the previous Schedule does not assign "pinecone" to it`,
+    );
+  });
+
+  test.each([
+    ['past', 3],
+    ['active', 2],
+  ])('honoured by the previous Schedule passes on the %s date, keeping it as published', async (_, active) => {
+    const run = await curate(
+      await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }), [['teacup', 'medium']]),
+      { now: during(active) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)).toEqual({
+      puzzleNumber: 2,
+      noun: 'pinecone',
+      pinned: false,
+    });
+  });
+
+  test('honoured on a past date passes after its object leaves the Answer Pool', async () => {
+    const run = await curate(
+      await contentDir((content) => {
+        content.pins.push({ date: dateOf(2), noun: 'pinecone' });
+        content.answerPool = content.answerPool.filter((entry) => entry.noun !== 'pinecone');
+      }),
+      { now: during(3) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(scheduledOn((await readBundle(run.bundleDir)).schedule, 2)!.noun).toBe('pinecone');
+  });
+
+  test.each([
+    ['kept', true],
+    ['deleted', false],
+  ])('honoured on a past date and then %s keeps its object out of generated days within the Repeat Gap', async (_, kept) => {
+    const run = await curate(
+      await contentDir(
+        (content) => {
+          content.schedule[1] = { puzzleNumber: 2, noun: 'teacup', pinned: true };
+          if (kept) content.pins.push({ date: dateOf(2), noun: 'teacup' });
+        },
+        [['teacup', 'medium']],
+      ),
+      { now: during(3) },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    const schedule = (await readBundle(run.bundleDir)).schedule;
+    expect(schedule.filter(({ noun }) => noun === 'teacup')).toEqual([{ puzzleNumber: 2, noun: 'teacup', pinned: true }]);
+    expect(scheduledOn(schedule, 3)!.noun).toBe('pinecone');
   });
 
   test('before the Launch Date fails, naming the date', async () => {
@@ -680,7 +742,7 @@ describe('A Pin', () => {
   });
 
   test('dates turn over at midnight Pacific, not UTC', async () => {
-    const dir = await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'pinecone' }));
+    const dir = await contentDir((content) => content.pins.push({ date: dateOf(2), noun: 'teapot' }));
     // 23:59 Pacific on the Launch Date, already the next day in UTC.
     expect((await curate(dir, { now: `${dateOf(2)}T07:59:00Z` })).status).toBe(0);
     expect((await curate(dir, { now: `${dateOf(2)}T08:00:00Z` })).status).toBe(1);
