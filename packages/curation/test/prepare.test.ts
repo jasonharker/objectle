@@ -36,13 +36,12 @@ function teapot(attributes: Json = {}): Json {
   };
 }
 
-/** A content directory holding just a Guess Vocabulary, with an empty Answer Pool and Schedule. */
+/** A content directory holding just a Guess Vocabulary, with an empty Answer Pool. */
 async function contentDir(guessVocabulary: Json[] = [teapot()]): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'objectle-prepare-'));
   await writeFile(join(dir, 'guess-vocabulary.json'), JSON.stringify(guessVocabulary));
   await writeFile(join(dir, 'answer-pool.json'), '[]');
   await writeFile(join(dir, 'pins.json'), '[]');
-  await writeFile(join(dir, 'schedule.json'), '[]');
   return dir;
 }
 
@@ -300,7 +299,7 @@ describe('A prepared model', () => {
     expect(prepared.status, prepared.stderr).toBe(0);
 
     const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-bundle-')), 'bundle');
-    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00'];
+    const clock = ['--launch-date', '2027-03-01', '--now', '2027-03-01T12:00:00-08:00', '--first-publish'];
     const built = await run(buildCli, [...clock, dir, bundleDir]);
     expect(built.status, built.stderr).toBe(0);
     expect(await readFile(join(bundleDir, 'models/teapot.glb'))).toEqual(

@@ -56,15 +56,20 @@ async function indexAsset(dir: string, path: string): Promise<StageAsset> {
  * asset it names. Throws, listing every problem, on a bundle the API could
  * not serve; the curation build's checks are the full ones. A Schedule entry
  * before `activePuzzleNumber` is never served, so it may name a noun that has
- * left the Answer Pool (ADR-0007).
+ * left the Answer Pool (ADR-0007). Given the configured `launchDate`, it
+ * refuses a bundle built for another Launch Date, which would shift every
+ * Pin and Difficulty Pattern day (ADR-0008).
  */
 export async function loadContent(
   dir: string,
-  { activePuzzleNumber = -Infinity }: { activePuzzleNumber?: number } = {},
+  { activePuzzleNumber = -Infinity, launchDate }: { activePuzzleNumber?: number; launchDate?: string } = {},
 ): Promise<Content> {
   const bundle: ContentBundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
 
   const problems: string[] = [];
+  if (launchDate !== undefined && bundle.launchDate !== launchDate) {
+    problems.push(`the bundle is built for Launch Date ${bundle.launchDate}, not the configured Launch Date ${launchDate}`);
+  }
   const assetsByPath = new Map<string, StageAsset>();
   const stagesByNoun = new Map<string, StageAsset[][]>();
   for (const entry of bundle.answerPool) {

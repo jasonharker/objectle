@@ -69,6 +69,15 @@ describe('Configuration', () => {
     expect(() => loadConfig({ ...env, PORT: port })).toThrow(/PORT/);
   });
 
+  test('serves metrics on OBJECTLE_METRICS_PORT, 9464 by default', () => {
+    expect(loadConfig(env).metricsPort).toBe(9464);
+    expect(loadConfig({ ...env, OBJECTLE_METRICS_PORT: '9100' }).metricsPort).toBe(9100);
+  });
+
+  test.each(['', '80a', '0', '65536'])('refuses an OBJECTLE_METRICS_PORT that is not a TCP port (%j)', (port) => {
+    expect(() => loadConfig({ ...env, OBJECTLE_METRICS_PORT: port })).toThrow(/OBJECTLE_METRICS_PORT/);
+  });
+
   test('resolves a relative client directory against the working directory', () => {
     expect(loadConfig({ ...env, OBJECTLE_CLIENT_DIR: 'packages/client/dist' }).clientDir).toBe(
       resolve('packages/client/dist'),
