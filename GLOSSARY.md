@@ -15,7 +15,7 @@ The sequential identity of one day's puzzle, shared by all players; the day turn
 _Avoid_: puzzle ID, day number, date
 
 **Launch Date**:
-The Pacific date of Puzzle Number 1, from which every later Puzzle Number is counted.
+The Pacific date of Puzzle Number 1, from which every later Puzzle Number is counted; fixed for good once Puzzle Number 1 has been played.
 _Avoid_: start date, epoch
 
 **Reveal Stage**:
@@ -88,6 +88,10 @@ _Avoid_: lock, reservation, override
 **Schedule**:
 The assignment of an Answer Pool object to each Puzzle Number through the Planning Horizon, generated around Pins; once assigned, a Puzzle Number keeps its object unless a Pin or that object leaving the Answer Pool forces a change, and a past or active Puzzle Number is never reassigned, even after its object leaves the Answer Pool.
 _Avoid_: calendar, rotation, playlist
+
+**Publish**:
+To put a checked content bundle in front of players: every change to the curation inputs and a nightly run both publish. The published Schedule is the one players are being served, and each publish extends it rather than one held anywhere else.
+_Avoid_: release, deploy, ship
 
 **Difficulty Pattern**:
 The Difficulty Rating the generated Schedule aims for on each Pacific day of the week: easy Monday and Tuesday, medium Wednesday and Thursday, hard Friday and Saturday, medium Sunday; Pins ignore it, and a day with no eligible object of its rating takes the nearest rating that has one.
