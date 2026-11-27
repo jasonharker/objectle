@@ -82,6 +82,8 @@ export interface ScheduleEntry {
 }
 
 export interface ContentBundle {
+  /** The Launch Date the bundle was built for, YYYY-MM-DD; the API refuses a bundle built for another (ADR-0008). */
+  launchDate: string;
   guessVocabulary: GuessVocabularyEntry[];
   answerPool: AnswerPoolEntry[];
   schedule: ScheduleEntry[];
