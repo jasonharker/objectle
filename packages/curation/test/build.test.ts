@@ -148,7 +148,7 @@ async function contentDir(
   await writeFile(join(dir, 'answer-pool.json'), JSON.stringify(content.answerPool));
   await writeFile(join(dir, 'pins.json'), JSON.stringify(content.pins));
   await mkdir(published(dir));
-  await writeFile(join(published(dir), 'bundle.json'), JSON.stringify({ schedule: content.schedule }));
+  await writeFile(join(published(dir), 'bundle.json'), JSON.stringify({ launchDate, schedule: content.schedule }));
   return dir;
 }
 
@@ -678,6 +678,18 @@ describe.concurrent('The previous bundle (ADR-0008)', () => {
     expect(run.status).toBe(1);
     expect(run.stderr).toMatch(/previous bundle .*bundle\.json/);
   });
+
+  test.each([
+    ['another Launch Date', '2027-02-01'],
+    ['no Launch Date', undefined],
+  ])('built for %s fails, naming both dates, rather than starting from an empty Schedule', async (_, built) => {
+    const dir = await contentDir();
+    await writeFile(join(published(dir), 'bundle.json'), JSON.stringify({ launchDate: built, schedule: validContent().schedule }));
+    const run = await curate(dir);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`is built for Launch Date ${built}, not ${launchDate}`);
+    expect(await exists(join(run.bundleDir, 'bundle.json'))).toBe(false);
+  });
 });
 
 describe('The previously published Schedule', () => {
@@ -973,6 +985,12 @@ describe('A Pin', () => {
   test('without a noun fails', async () => {
     expect(await problems((content) => content.pins.push({ date: dateOf(10) }))).toContain(
       `Pin on ${dateOf(10)} has no noun`,
+    );
+  });
+
+  test('without a noun on a past date the previous Schedule left unassigned fails', async () => {
+    expect(await problems((content) => content.pins.push({ date: dateOf(3) }), { now: during(4) })).toContain(
+      `Pin on ${dateOf(3)} has no noun`,
     );
   });
 });

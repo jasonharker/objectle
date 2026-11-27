@@ -1,6 +1,6 @@
 // Seam 1: the scoring API in-process, with an injected clock, the fixture
 // content bundle and a test signing key. Tests talk to it only over HTTP.
-import { cp, mkdtemp } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,13 +23,19 @@ function fixtureFor(launchDate: string): Promise<string> {
 export const fixtureDir = await fixtureFor('2027-03-01');
 
 async function buildFixture(launchDate: string): Promise<string> {
-  const bundleDir = join(await mkdtemp(join(tmpdir(), 'objectle-fixture-')), 'bundle');
+  const dir = await mkdtemp(join(tmpdir(), 'objectle-fixture-'));
+  const bundleDir = join(dir, 'bundle');
+  // The fixture's previously published bundle, as if published for this
+  // Launch Date: the build refuses one built for another.
+  const published = JSON.parse(await readFile(new URL('./fixture/published/bundle.json', import.meta.url), 'utf8'));
+  await mkdir(join(dir, 'published'));
+  await writeFile(join(dir, 'published', 'bundle.json'), JSON.stringify({ ...published, launchDate }));
   // Built on its Launch Date, which keeps the short Schedule of the fixture's
   // previously published bundle as written.
   const { problems } = await buildContent(fileURLToPath(new URL('./fixture/', import.meta.url)), bundleDir, {
     launchDate,
     now: new Date(`${launchDate}T12:00:00-08:00`),
-    previousBundle: fileURLToPath(new URL('./fixture/published/', import.meta.url)),
+    previousBundle: join(dir, 'published'),
   });
   if (problems.length > 0) throw new Error(`the fixture content does not build:\n${problems.join('\n')}`);
   return bundleDir;

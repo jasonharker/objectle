@@ -119,7 +119,11 @@ export async function readInput(contentDir: string, file: string, problems: stri
 }
 
 /** The Schedule in a previous bundle's bundle.json, or undefined having said why it can't be read. */
-async function readPreviousSchedule(previousBundle: string, problems: string[]): Promise<unknown[] | undefined> {
+async function readPreviousSchedule(
+  previousBundle: string,
+  launchDate: string,
+  problems: string[],
+): Promise<unknown[] | undefined> {
   const file = join(previousBundle, 'bundle.json');
   let bundle: unknown;
   try {
@@ -130,6 +134,11 @@ async function readPreviousSchedule(previousBundle: string, problems: string[]):
   }
   if (!isObject(bundle) || !Array.isArray(bundle.schedule)) {
     problems.push(`previous bundle ${file} has no Schedule`);
+    return undefined;
+  }
+  // Its Puzzle Numbers count from its own Launch Date, so they mean other days.
+  if (bundle.launchDate !== launchDate) {
+    problems.push(`previous bundle ${file} is built for Launch Date ${bundle.launchDate}, not ${launchDate}`);
     return undefined;
   }
   return bundle.schedule;
@@ -167,7 +176,7 @@ export async function buildContent(
   const vocabularyInput = await readInput(contentDir, inputFiles.guessVocabulary, problems);
   const answerPoolInput = await readInput(contentDir, inputFiles.answerPool, problems);
   const pinsInput = await readInput(contentDir, inputFiles.pins, problems);
-  const scheduleInput = previousBundle === undefined ? [] : await readPreviousSchedule(previousBundle, problems);
+  const scheduleInput = previousBundle === undefined ? [] : await readPreviousSchedule(previousBundle, launchDate, problems);
 
   /** Every file the bundle names, so each is copied once. */
   const files = new Set<string>();
@@ -375,7 +384,14 @@ export async function buildContent(
     // A Pin whose date has arrived is history once the previous Schedule
     // honoured it: kept as published, whatever the Answer Pool now holds, and
     // its Repeat Gap carried by that Schedule entry (ADR-0007).
-    if (puzzleNumber >= 1 && puzzleNumber <= active && previousNouns.get(puzzleNumber) === entry.noun) continue;
+    if (
+      isText(entry.noun) &&
+      puzzleNumber >= 1 &&
+      puzzleNumber <= active &&
+      previousNouns.get(puzzleNumber) === entry.noun
+    ) {
+      continue;
+    }
     if (!isText(entry.noun)) problems.push(`${label} has no noun`);
     else if (answerPoolInput !== undefined && !answerPoolNouns.has(entry.noun)) {
       problems.push(`${label} is to ${JSON.stringify(entry.noun)}, which is not in the Answer Pool`);
