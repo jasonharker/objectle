@@ -554,3 +554,175 @@ test('an unknown command is a usage error', async () => {
   expect((await publish('publish')).status).toBe(2);
   expect((await publish()).status).toBe(2);
 });
+
+/**
+ * A registry holding `objectle-content` tags, each naming an image by a label; tags with one
+ * label share a manifest digest, as reproducible builds of unchanged content do. Like the
+ * distribution registry, deleting a manifest by digest removes every tag that points to it.
+ */
+async function fakeTagRegistry(
+  tags: Record<string, string>,
+  { deleteStatus = 202 }: { deleteStatus?: number } = {},
+): Promise<{ host: string; close: () => void; tags: () => string[]; requests: string[]; digestOf: (label: string) => string }> {
+  const manifestOf = (label: string) =>
+    JSON.stringify({ schemaVersion: 2, mediaType: dockerManifest, config: { digest: digest(Buffer.from(label)) }, layers: [] });
+  const digestOf = (label: string) => digest(Buffer.from(manifestOf(label)));
+  const held = new Map(Object.entries(tags));
+  const requests: string[] = [];
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    const url = request.url ?? '';
+    requests.push(`${request.method} ${url}`);
+    if (request.method === 'GET' && url === '/v2/objectle-content/tags/list') {
+      const body = { name: 'objectle-content', tags: held.size === 0 ? null : [...held.keys()] };
+      return response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+    }
+    const reference = url.startsWith('/v2/objectle-content/manifests/') ? url.slice(31) : undefined;
+    if (reference !== undefined && (request.method === 'HEAD' || request.method === 'GET')) {
+      const label = reference.startsWith('sha256:')
+        ? [...held.values()].find((label) => digestOf(label) === reference)
+        : held.get(reference);
+      if (label === undefined) return response.writeHead(404).end();
+      return response
+        .writeHead(200, { 'content-type': dockerManifest, 'docker-content-digest': digestOf(label) })
+        .end(request.method === 'GET' ? manifestOf(label) : undefined);
+    }
+    if (reference !== undefined && request.method === 'DELETE') {
+      if (deleteStatus !== 202) return response.writeHead(deleteStatus).end();
+      const doomed = [...held].filter(([, label]) => digestOf(label) === reference);
+      if (doomed.length === 0) return response.writeHead(404).end();
+      for (const [tag] of doomed) held.delete(tag);
+      return response.writeHead(202).end();
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    host: `127.0.0.1:${(server.address() as AddressInfo).port}`,
+    close: () => server.close(),
+    tags: () => [...held.keys()].sort(),
+    requests,
+    digestOf,
+  };
+}
+
+/** Publish tags 1a2b3c4d-1 … 1a2b3c4d-<count>, each its own image. */
+const publishTags = (count: number) =>
+  Object.fromEntries(Array.from({ length: count }, (_, i) => [`1a2b3c4d-${i + 1}`, `image ${i + 1}`]));
+
+describe('retain', () => {
+  test('deletes the content images older than the deployed one and the five before it', async () => {
+    const registry = await fakeTagRegistry(publishTags(9));
+    try {
+      const run = await publish('retain', `${registry.host}/objectle-content:1a2b3c4d-9`);
+      expect(run.stderr).toBe('');
+      expect(run.status).toBe(0);
+      expect(registry.tags()).toEqual(['1a2b3c4d-4', '1a2b3c4d-5', '1a2b3c4d-6', '1a2b3c4d-7', '1a2b3c4d-8', '1a2b3c4d-9']);
+      expect(run.stdout).toContain('deleted objectle-content:1a2b3c4d-1');
+      expect(run.stdout).toContain('deleted objectle-content:1a2b3c4d-3');
+      // Every request stays inside the content image repository, and each delete names a digest.
+      expect(registry.requests.every((request) => / \/v2\/objectle-content\//.test(request))).toBe(true);
+      const deletes = registry.requests.filter((request) => request.startsWith('DELETE '));
+      expect(deletes.sort()).toEqual(
+        ['image 1', 'image 2', 'image 3'].map((label) => `DELETE /v2/objectle-content/manifests/${registry.digestOf(label)}`).sort(),
+      );
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('a dry run lists what it would delete and deletes nothing', async () => {
+    const registry = await fakeTagRegistry(publishTags(8));
+    try {
+      const run = await publish('retain', '--dry-run', `${registry.host}/objectle-content:1a2b3c4d-8`);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('dry run: would delete objectle-content:1a2b3c4d-1 ');
+      expect(run.stdout).toContain('dry run: would delete objectle-content:1a2b3c4d-2 ');
+      expect(run.stdout).not.toContain('delete objectle-content:1a2b3c4d-3 ');
+      expect(run.stdout).toContain('keep objectle-content:1a2b3c4d-8 (deployed)');
+      expect(registry.tags()).toHaveLength(8);
+      expect(registry.requests.some((request) => request.startsWith('DELETE '))).toBe(false);
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('never deletes a digest a kept tag shares, and counts the five by image, not by tag', async () => {
+    // Builds 6 and 7 rebuilt unchanged content, so they are the same image as 5; build 2 is the deployed image again.
+    const registry = await fakeTagRegistry({
+      ...publishTags(10),
+      '1a2b3c4d-6': 'image 5',
+      '1a2b3c4d-7': 'image 5',
+      '1a2b3c4d-2': 'image 10',
+    });
+    try {
+      const run = await publish('retain', `${registry.host}/objectle-content:1a2b3c4d-10`);
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('keep objectle-content:1a2b3c4d-2 (the same image as a kept tag)');
+      // Images 9, 8, 5 (tags 7, 6, 5), 4 and 3 are the five before the deployed image 10 (tags 10 and 2); image 1 goes.
+      expect(registry.tags()).toEqual(
+        ['1a2b3c4d-10', '1a2b3c4d-2', '1a2b3c4d-3', '1a2b3c4d-4', '1a2b3c4d-5', '1a2b3c4d-6', '1a2b3c4d-7', '1a2b3c4d-8', '1a2b3c4d-9'].sort(),
+      );
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('keeps publish tags newer than the deployed one and tags that are not publish tags', async () => {
+    const registry = await fakeTagRegistry({ ...publishTags(9), latest: 'image 1', 'hand-pushed': 'other' });
+    try {
+      const run = await publish('retain', `${registry.host}/objectle-content:1a2b3c4d-7`);
+      expect(run.status).toBe(0);
+      // Image 1 stays because `latest` points to it.
+      expect(registry.tags()).toEqual(
+        ['1a2b3c4d-1', '1a2b3c4d-2', '1a2b3c4d-3', '1a2b3c4d-4', '1a2b3c4d-5', '1a2b3c4d-6', '1a2b3c4d-7', '1a2b3c4d-8', '1a2b3c4d-9', 'hand-pushed', 'latest'].sort(),
+      );
+      expect(run.stdout).toContain('keep objectle-content:1a2b3c4d-9 (newer than the deployed image)');
+      expect(run.stdout).toContain('keep objectle-content:latest (not a publish tag)');
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('deletes nothing when the deployed tag is not in the registry', async () => {
+    const registry = await fakeTagRegistry(publishTags(9));
+    try {
+      const run = await publish('retain', `${registry.host}/objectle-content:1a2b3c4d-12`);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('1a2b3c4d-12');
+      expect(registry.tags()).toHaveLength(9);
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('fails naming the status when the registry refuses deletes', async () => {
+    const registry = await fakeTagRegistry(publishTags(7), { deleteStatus: 405 });
+    try {
+      const run = await publish('retain', `${registry.host}/objectle-content:1a2b3c4d-7`);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('405');
+    } finally {
+      registry.close();
+    }
+  });
+
+  test('touches no repository but the content image repository', async () => {
+    const registry = await fakeTagRegistry(publishTags(9));
+    try {
+      const run = await publish('retain', `${registry.host}/objectle:1a2b3c4d-9`);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('objectle-content');
+      expect(registry.requests).toEqual([]);
+    } finally {
+      registry.close();
+    }
+  });
+
+  test.each([
+    ['with no image', ['retain']],
+    ['with a digest reference', ['retain', `registry.example:5000/objectle-content@sha256:${'0'.repeat(64)}`]],
+    ['with --now', ['retain', '--now', '2027-03-01T12:00:00Z', 'registry.example:5000/objectle-content:1a2b3c4d-9']],
+  ])('is a usage error %s', async (_, args) => {
+    expect((await publish(...args)).status).toBe(2);
+  });
+});

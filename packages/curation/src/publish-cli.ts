@@ -5,6 +5,7 @@
 //   node packages/curation/src/publish-cli.ts image-context <bundle-dir> <context-dir>
 //   node packages/curation/src/publish-cli.ts deploy --dry-run [--now <instant>] <deployment-yaml> <image>
 //   node packages/curation/src/publish-cli.ts guard [--now <instant>] <deployed-bundle-dir> <bundle-dir>
+//   node packages/curation/src/publish-cli.ts retain [--dry-run] <deployed-image>
 // read-back prints, from the GitOps repo's objectle Deployment, the Launch
 // Date and the deployed content image (empty when none has ever been
 // published) as LAUNCH_DATE=… and CONTENT_IMAGE=… lines for a shell to source.
@@ -16,7 +17,13 @@
 // commit is the launch switch's step). guard is the midnight guard: it refuses
 // a new bundle whose Schedule differs from the deployed bundle's on any Puzzle
 // Number up to the one active at the instant (--now, the real clock by
-// default), listing each. Each exits 0 on success, 1 naming the
+// default), listing each. retain is content image retention, run after a
+// deploy: it keeps the deployed image, every publish newer than it and the five
+// images before it, and deletes the older content image manifests by digest
+// (the registry's nightly garbage collection frees their blobs). It touches only
+// the objectle-content repository, never deletes a digest a kept tag shares,
+// and keeps any tag that is not a publish tag (<commit>-<build>); --dry-run
+// lists what it would delete. Each exits 0 on success, 1 naming the
 // problem that stopped it on stderr, or 2 on a usage error.
 import { createHash } from 'node:crypto';
 import { constants, copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -33,6 +40,7 @@ const usage = [
   '       node packages/curation/src/publish-cli.ts image-context <bundle-dir> <context-dir>',
   '       node packages/curation/src/publish-cli.ts deploy --dry-run [--now <instant>] <deployment-yaml> <image>',
   '       node packages/curation/src/publish-cli.ts guard [--now <instant>] <deployed-bundle-dir> <bundle-dir>',
+  '       node packages/curation/src/publish-cli.ts retain [--dry-run] <deployed-image>',
 ].join('\n');
 
 /** The comment that marks the content image reference in the Deployment. */
@@ -247,6 +255,92 @@ async function guard(deployedDir: string, bundleDir: string, now: Date): Promise
   );
 }
 
+/** The only registry repository retention may delete from. */
+const contentRepository = 'objectle-content';
+/** The images retention keeps before the deployed one (ADR-0008). */
+const keptBefore = 5;
+/** A tag the publish pipeline writes: the content commit's first 8 hex digits, then the build number. */
+const publishTag = /^[0-9a-f]{8}-(\d+)$/;
+
+async function request(method: string, url: string, headers: Record<string, string> = {}): Promise<Response> {
+  return fetch(url, { method, headers }).catch((error) => fail(`${url} can't be reached: ${error.cause?.message ?? error.message}`));
+}
+
+/** Content image retention: keep the deployed image, newer publishes and the five images before it; delete the rest. */
+async function retain(reference: string, dryRun: boolean): Promise<void> {
+  const [, host, repository, deployedTag] = imagePattern.exec(reference)!;
+  if (repository !== contentRepository) fail(`retention touches only the ${contentRepository} repository, not ${repository}`);
+  const base = `http://${host}/v2/${repository}`;
+  const { body } = await get(`${base}/tags/list`);
+  const tags: string[] = JSON.parse(body.toString('utf8')).tags ?? [];
+  if (!tags.includes(deployedTag)) fail(`${reference} is not in the registry; deleting nothing`);
+
+  const digestOf = async (tag: string): Promise<string> => {
+    const response = await request('HEAD', `${base}/manifests/${tag}`, { accept: manifestTypes.join(', ') });
+    const digest = response.headers.get('docker-content-digest');
+    if (!response.ok || digest === null) fail(`${repository}:${tag} answered ${response.status} with no manifest digest`);
+    return digest!;
+  };
+  const digests = new Map<string, string>();
+  for (const tag of tags) digests.set(tag, await digestOf(tag));
+
+  const build = (tag: string) => Number(publishTag.exec(tag)?.[1]);
+  const deployedBuild = build(deployedTag);
+  /** Why each kept tag is kept; a digest any of them names is never deleted. */
+  const reasons = new Map<string, string>();
+  for (const tag of tags) {
+    if (tag === deployedTag) reasons.set(tag, 'deployed');
+    else if (!publishTag.test(tag)) reasons.set(tag, 'not a publish tag');
+    else if (!(build(tag) < deployedBuild)) reasons.set(tag, 'newer than the deployed image');
+  }
+  const older = tags.filter((tag) => !reasons.has(tag)).sort((a, b) => build(b) - build(a));
+  const kept = new Set([...reasons.keys()].map((tag) => digests.get(tag)!));
+  let before = 0;
+  for (const tag of older) {
+    const digest = digests.get(tag)!;
+    if (kept.has(digest)) {
+      reasons.set(tag, 'the same image as a kept tag');
+    } else if (before < keptBefore) {
+      before++;
+      kept.add(digest);
+      reasons.set(tag, `one of the ${keptBefore} images before the deployed one`);
+    }
+  }
+
+  // Newest publish first, then the tags that are not publish tags.
+  const listed = [...tags].sort((a, b) => (build(b) || -1) - (build(a) || -1));
+  for (const tag of listed.filter((tag) => reasons.has(tag))) console.log(`keep ${repository}:${tag} (${reasons.get(tag)})`);
+  const doomed = older.filter((tag) => !reasons.has(tag));
+  if (doomed.length === 0) {
+    console.log(`nothing to delete from ${repository}`);
+    return;
+  }
+  if (dryRun) {
+    for (const tag of doomed) console.log(`dry run: would delete ${repository}:${tag} (${digests.get(tag)})`);
+    return;
+  }
+  // One delete per digest: the registry removes every tag that names it.
+  const deleted = new Set<string>();
+  for (const tag of doomed) {
+    const digest = digests.get(tag)!;
+    if (!deleted.has(digest)) {
+      const response = await request('DELETE', `${base}/manifests/${digest}`);
+      if (response.status !== 202 && response.status !== 404) {
+        fail(`deleting ${repository}:${tag} (${digest}) answered ${response.status}`);
+      }
+      deleted.add(digest);
+    }
+    console.log(`deleted ${repository}:${tag} (${digest})`);
+  }
+  // Read the registry back: the deleted tags are gone and every kept tag still names its image.
+  const left: string[] = JSON.parse((await get(`${base}/tags/list`)).body.toString('utf8')).tags ?? [];
+  const lingering = doomed.filter((tag) => left.includes(tag));
+  if (lingering.length > 0) fail(`the registry still lists ${lingering.map((tag) => `${repository}:${tag}`).join(', ')}`);
+  for (const tag of reasons.keys()) {
+    if (!left.includes(tag) || (await digestOf(tag)) !== digests.get(tag)) fail(`kept tag ${repository}:${tag} no longer names its image`);
+  }
+}
+
 let parsed;
 try {
   parsed = parseArgs({
@@ -266,10 +360,11 @@ const valid =
   (command === 'fetch-bundle' && args.length === 2 && isImage(args[0])) ||
   (command === 'image-context' && args.length === 2) ||
   (command === 'deploy' && args.length === 2 && values['dry-run'] === true && isImage(args[1]) && !Number.isNaN(now.getTime())) ||
-  (command === 'guard' && args.length === 2 && values['dry-run'] === undefined && !Number.isNaN(now.getTime()));
+  (command === 'guard' && args.length === 2 && values['dry-run'] === undefined && !Number.isNaN(now.getTime())) ||
+  (command === 'retain' && args.length === 1 && imagePattern.exec(args[0])?.[3] !== undefined);
 if (
   !valid ||
-  (command !== 'deploy' && values['dry-run'] !== undefined) ||
+  (command !== 'deploy' && command !== 'retain' && values['dry-run'] !== undefined) ||
   (command !== 'deploy' && command !== 'guard' && values.now !== undefined)
 ) {
   console.error(usage);
@@ -288,6 +383,8 @@ try {
     console.log(`wrote the content image's Dockerfile and build context to ${args[1]}`);
   } else if (command === 'deploy') {
     await deployDryRun(args[0], args[1], now);
+  } else if (command === 'retain') {
+    await retain(args[0], values['dry-run'] === true);
   } else {
     await guard(args[0], args[1], now);
   }
